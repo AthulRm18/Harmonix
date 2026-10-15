@@ -58,11 +58,34 @@ export const fetchModelMetrics = (id: string) =>
 export const fetchExplanation = (predictionId: number) =>
   api.get(`/models/predictions/${predictionId}/explanation`).then(r => r.data);
 
+export const fetchPhysicsExplanation = (faultType: string, severity = 0.5) =>
+  api.get('/explain', { params: { fault_type: faultType, severity } }).then(r => r.data);
+
+// ── Signatures API ───────────────────────────────────────────────
+export const fetchFFT = (runId: string, sensor = 'vibration', t0 = 0, t1 = 1) =>
+  api.get(`/signatures/${runId}/fft`, { params: { sensor, t0, t1 } }).then(r => r.data);
+
+export const fetchSTFT = (runId: string, sensor = 'vibration', t0 = 0, t1 = 2, nperseg = 256) =>
+  api.get(`/signatures/${runId}/stft`, { params: { sensor, t0, t1, nperseg } }).then(r => r.data);
+
+export const fetchEnvelope = (runId: string, sensor = 'vibration', t0 = 0, t1 = 1) =>
+  api.get(`/signatures/${runId}/envelope`, { params: { sensor, t0, t1 } }).then(r => r.data);
+
+export const fetchOrderSpectrum = (runId: string, sensor = 'vibration', t0 = 0, t1 = 1, rpm = 3000) =>
+  api.get(`/signatures/${runId}/order`, { params: { sensor, t0, t1, rpm } }).then(r => r.data);
+
+export const fetchWaveform = (runId: string, sensor = 'vibration', t0 = 0, t1 = 0.05) =>
+  api.get(`/signatures/${runId}/waveform`, { params: { sensor, t0, t1 } }).then(r => r.data);
+
 // ── Optimizer API ────────────────────────────────────────────────
 export const startOptimization = (params: Record<string, unknown>) =>
   api.post('/optimize', params).then(r => r.data);
 export const fetchOptimization = (id: number) =>
   api.get(`/optimize/${id}`).then(r => r.data);
+export const fetchEPIGrid = (rpmMin = 1000, rpmMax = 5000, loadMin = 10, loadMax = 90, steps = 20) =>
+  api.get('/optimize/grid/epi', {
+    params: { rpm_min: rpmMin, rpm_max: rpmMax, load_min: loadMin, load_max: loadMax, steps },
+  }).then(r => r.data);
 
 // ── Health ───────────────────────────────────────────────────────
 export const fetchHealth = () => api.get('/health').then(r => r.data);

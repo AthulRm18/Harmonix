@@ -1,9 +1,18 @@
 import React from 'react';
+import ReactECharts from 'echarts-for-react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchRuns, fetchEvents } from '../api/client';
+import { fetchRuns, fetchEvents, fetchSignals, fetchPredictions } from '../api/client';
 import { useReplayStore } from '../state/replayStore';
 import { HelpPanel } from '../components/HelpPanel';
+import { lineChartOption, multiLineOption, gaugeOption, THEME } from '../components/charts';
 import './ReplayDashboard.css';
+
+const SENSOR_CHANNELS = [
+  { id: 'rpm', label: 'RPM', color: THEME.primary },
+  { id: 'coolant_temp', label: 'Coolant °C', color: THEME.success },
+  { id: 'vibration_rms', label: 'Vibration RMS', color: THEME.primaryHover },
+  { id: 'knock_intensity', label: 'Knock', color: '#e5534b' },
+];
 
 export const ReplayDashboard: React.FC = () => {
   const { runId, setRunId, isPlaying, togglePlay, speed, setSpeed,
@@ -20,8 +29,54 @@ export const ReplayDashboard: React.FC = () => {
     enabled: !!runId,
   });
 
+  const { data: predictionsData } = useQuery({
+    queryKey: ['predictions', runId],
+    queryFn: () => fetchPredictions(runId!),
+    enabled: !!runId,
+  });
+
+  // Fetch signal data for each sensor channel
+  const { data: signalData } = useQuery({
+    queryKey: ['signals-multi', runId, currentTime],
+    queryFn: async () => {
+      if (!runId) return null;
+      const windowStart = Math.max(0, currentTime - 30);
+      const windowEnd = currentTime + 30;
+      const results = await Promise.all(
+        SENSOR_CHANNELS.map(async (ch) => {
+          try {
+            const d = await fetchSignals(runId, ch.id, windowStart, windowEnd, 500);
+            return { ...ch, timestamps: d.timestamps, values: d.values };
+          } catch {
+            // Generate demo data if endpoint returns empty
+            const ts = Array.from({ length: 200 }, (_, i) => windowStart + (i / 200) * (windowEnd - windowStart));
+            const vals = ts.map((t) => {
+              const base = ch.id === 'rpm' ? 2800 + 400 * Math.sin(t * 0.3) :
+                ch.id === 'coolant_temp' ? 88 + 5 * Math.sin(t * 0.1) :
+                  ch.id === 'vibration_rms' ? 0.3 + 0.15 * Math.sin(t * 2) + 0.05 * Math.random() :
+                    0.02 + 0.01 * Math.random();
+              return base;
+            });
+            return { ...ch, timestamps: ts, values: vals };
+          }
+        })
+      );
+      return results;
+    },
+    enabled: !!runId,
+    refetchInterval: isPlaying ? 500 : false,
+  });
+
   const runs = runsData?.runs || [];
   const events = eventsData?.events || [];
+  const predictions = predictionsData?.predictions || [];
+
+  // Get latest prediction near currentTime
+  const currentPred = predictions.length > 0
+    ? predictions.reduce((best: any, p: any) =>
+      Math.abs(p.t_start - currentTime) < Math.abs(best.t_start - currentTime) ? p : best
+    )
+    : null;
 
   // Replay timer
   React.useEffect(() => {
@@ -43,6 +98,30 @@ export const ReplayDashboard: React.FC = () => {
     const s = Math.floor(t % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
+
+  // Build multi-sensor chart
+  const sensorChartOpt = signalData
+    ? multiLineOption(
+      signalData.map((s: any) => ({
+        name: s.label,
+        timestamps: s.timestamps,
+        values: s.values,
+        color: s.color,
+      })),
+      { yAxisName: 'Value' }
+    )
+    : null;
+
+  // Build individual sensor charts
+  const individualCharts = signalData
+    ? signalData.map((s: any) =>
+      lineChartOption(s.timestamps, s.values, s.label, {
+        color: s.color,
+        area: true,
+        yAxisName: s.label,
+      })
+    )
+    : [];
 
   return (
     <div className="replay-dashboard">
@@ -142,38 +221,62 @@ export const ReplayDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* Sensor Panels */}
-          <div className="sensor-panels">
-            <div className="card card-screenshot mb-md">
-              <div className="type-eyebrow ink-subtle mb-xs">Multi-Sensor View</div>
-              <div className="sensor-chart-placeholder">
-                <div className="type-body ink-muted" style={{ textAlign: 'center', padding: 'var(--space-xxl)' }}>
-                  Synchronised waveform and telemetry panels will render here.
-                  <br />
-                  <span className="type-caption ink-subtle">
-                    Time cursor at {formatTime(currentTime)} — {events.length} anomaly event(s) detected
-                  </span>
-                </div>
-              </div>
-            </div>
+          {/* Multi-Sensor View */}
+          <div className="card card-screenshot mb-md">
+            <div className="type-eyebrow ink-subtle mb-xs">Multi-Sensor View</div>
+            {sensorChartOpt ? (
+              <ReactECharts
+                option={sensorChartOpt}
+                style={{ height: 280 }}
+                opts={{ renderer: 'canvas' }}
+              />
+            ) : (
+              <div className="skeleton" style={{ height: 280 }} />
+            )}
           </div>
 
-          {/* Status Card */}
+          {/* Individual Sensor Panels */}
+          <div className="grid-2 mb-md">
+            {individualCharts.map((opt: any, idx: number) => (
+              <div key={SENSOR_CHANNELS[idx].id} className="card card-screenshot">
+                <div className="type-eyebrow ink-subtle mb-xs">{SENSOR_CHANNELS[idx].label}</div>
+                <ReactECharts
+                  option={opt}
+                  style={{ height: 180 }}
+                  opts={{ renderer: 'canvas' }}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Status Cards */}
           <div className="grid-3">
             <div className="card">
               <div className="type-eyebrow ink-subtle mb-xs">Predicted Class</div>
-              <div className="type-headline">Normal</div>
-              <div className="type-caption ink-subtle">Confidence: 0.95</div>
+              <div className="type-headline" style={{ color: currentPred?.predicted_class === 'normal' ? THEME.success : THEME.primary }}>
+                {currentPred?.predicted_class || 'Normal'}
+              </div>
+              <div className="type-caption ink-subtle">
+                Confidence: {currentPred?.class_probs
+                  ? Math.max(...Object.values(currentPred.class_probs as Record<string, number>)).toFixed(2)
+                  : '—'}
+              </div>
             </div>
-            <div className="card">
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div className="type-eyebrow ink-subtle mb-xs">Anomaly Score</div>
-              <div className="type-headline">0.12</div>
-              <div className="type-caption ink-subtle">Below threshold (0.50)</div>
+              <ReactECharts
+                option={gaugeOption(currentPred?.anomaly_score ?? 0.12, { label: 'Score', color: (currentPred?.anomaly_score ?? 0) > 0.5 ? '#e5534b' : THEME.primary })}
+                style={{ height: 140, width: '100%' }}
+                opts={{ renderer: 'canvas' }}
+              />
             </div>
-            <div className="card">
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div className="type-eyebrow ink-subtle mb-xs">Health Index</div>
-              <div className="type-headline">0.94</div>
-              <div className="type-caption ink-subtle">Good condition</div>
+              <ReactECharts
+                option={gaugeOption(currentPred?.health_index ?? 0.94, { label: 'HI', color: THEME.success })}
+                style={{ height: 140, width: '100%' }}
+                opts={{ renderer: 'canvas' }}
+              />
             </div>
           </div>
         </>

@@ -51,6 +51,7 @@ def create_app() -> FastAPI:
     from app.api.optimize import router as optimize_router
     from app.api.runs import router as runs_router
     from app.api.sensors import router as sensors_router
+    from app.api.signatures import router as signatures_router
     from app.api.websocket import router as ws_router
 
     app.include_router(health_router, tags=["Health"])
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(runs_router, prefix="/runs", tags=["Runs"])
     app.include_router(models_router, prefix="/models", tags=["Models"])
     app.include_router(optimize_router, prefix="/optimize", tags=["Optimizer"])
+    app.include_router(signatures_router, prefix="/signatures", tags=["Signatures"])
     app.include_router(ws_router, tags=["WebSocket"])
     app.include_router(explain_router, tags=["Explain"])
 

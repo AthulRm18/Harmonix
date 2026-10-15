@@ -1,7 +1,6 @@
 """Optimizer API – sweet-spot optimisation endpoints."""
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -16,7 +15,8 @@ router = APIRouter()
 
 class OptimizeRequest(BaseModel):
     """Parameters for launching an optimisation run."""
-    run_id: Optional[str] = None
+
+    run_id: str | None = None
     rpm_range: tuple[float, float] = (1000, 5000)
     load_range: tuple[float, float] = (10, 90)
     knock_threshold: float = 0.1
@@ -50,9 +50,7 @@ async def start_optimization(
 @router.get("/{opt_id}")
 async def get_optimization(opt_id: int, db: AsyncSession = Depends(get_db)):
     """Get optimisation results."""
-    result = await db.execute(
-        select(OptimizationResult).where(OptimizationResult.id == opt_id)
-    )
+    result = await db.execute(select(OptimizationResult).where(OptimizationResult.id == opt_id))
     opt = result.scalar_one_or_none()
     if not opt:
         raise HTTPException(status_code=404, detail="Optimization not found")

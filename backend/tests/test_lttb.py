@@ -1,5 +1,7 @@
 """Tests for LTTB downsampling."""
+
 import math
+
 from app.pipeline.lttb import downsample_lttb
 
 

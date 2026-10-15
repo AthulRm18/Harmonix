@@ -8,12 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
-
-# Copy application code
+# Copy application and project definition
 COPY . .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -e ".[dev]"
 
 # Create data directories
 RUN mkdir -p /data/blobs /data

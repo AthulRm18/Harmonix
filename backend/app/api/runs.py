@@ -1,16 +1,15 @@
 """Runs API – CRUD, signals, predictions, events, prognosis, performance."""
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
-from app.db.models import Run, SensorReading, Window, Prediction, AnomalyEvent
 from app.api.deps import PaginationParams
+from app.db import get_db
+from app.db.models import AnomalyEvent, Prediction, Run, SensorReading, Window
 from app.pipeline.lttb import downsample_lttb
 
 router = APIRouter()
@@ -18,12 +17,14 @@ router = APIRouter()
 
 # ── Schemas ───────────────────────────────────────────────────────────
 
+
 class SimulateRequest(BaseModel):
     """Parameters for launching a simulation run."""
+
     name: str = "Simulation Run"
-    scenario: Optional[dict] = None
+    scenario: dict | None = None
     duration_s: float = 300.0
-    seed: Optional[int] = None
+    seed: int | None = None
 
 
 class RunResponse(BaseModel):
@@ -31,15 +32,16 @@ class RunResponse(BaseModel):
     name: str
     source: str
     status: str
-    duration_s: Optional[float]
-    ground_truth: Optional[dict]
-    created_at: Optional[str]
+    duration_s: float | None
+    ground_truth: dict | None
+    created_at: str | None
 
     class Config:
         from_attributes = True
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
+
 
 @router.get("")
 async def list_runs(
@@ -127,7 +129,7 @@ async def get_signals(
     run_id: str,
     sensor: str = Query(..., description="Sensor ID"),
     t0: float = Query(0.0, description="Start time (seconds)"),
-    t1: Optional[float] = Query(None, description="End time (seconds)"),
+    t1: float | None = Query(None, description="End time (seconds)"),
     max_points: int = Query(2000, ge=10, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
@@ -202,11 +204,7 @@ async def get_predictions(
 @router.get("/{run_id}/events")
 async def get_events(run_id: str, db: AsyncSession = Depends(get_db)):
     """Get anomaly onset events for a run (markers for the timeline)."""
-    q = (
-        select(AnomalyEvent)
-        .where(AnomalyEvent.run_id == run_id)
-        .order_by(AnomalyEvent.t_onset)
-    )
+    q = select(AnomalyEvent).where(AnomalyEvent.run_id == run_id).order_by(AnomalyEvent.t_onset)
     result = await db.execute(q)
     events = result.scalars().all()
 
@@ -262,11 +260,7 @@ async def get_prognosis(run_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{run_id}/performance")
 async def get_performance(run_id: str, db: AsyncSession = Depends(get_db)):
     """Get performance features for a run."""
-    q = (
-        select(Window)
-        .where(Window.run_id == run_id)
-        .order_by(Window.t_start)
-    )
+    q = select(Window).where(Window.run_id == run_id).order_by(Window.t_start)
     result = await db.execute(q)
     windows = result.scalars().all()
 

@@ -3,6 +3,7 @@
 Currently backed by local filesystem.  The interface is designed so it can
 swap to S3/MinIO by implementing a different backend class.
 """
+
 from __future__ import annotations
 
 import os

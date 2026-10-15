@@ -14,13 +14,13 @@ Tables:
 - optimization_results: sweet-spot optimiser outputs
 - jobs: background task tracking
 """
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from sqlalchemy import (
-    Boolean,
+    JSON,
     Column,
     DateTime,
     Float,
@@ -31,19 +31,9 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.db import Base
-
-# Use JSONB on PostgreSQL, fallback to JSON-as-Text on SQLite
-try:
-    from sqlalchemy.dialects.postgresql import JSONB as JSONType
-except ImportError:
-    from sqlalchemy import JSON as JSONType  # type: ignore[assignment]
-
-# We use plain JSON that works everywhere; JSONB is only used via raw PostgreSQL
-from sqlalchemy import JSON
 
 
 def _uuid() -> str:
@@ -52,6 +42,7 @@ def _uuid() -> str:
 
 class Engine(Base):
     """Engine profile and configuration."""
+
     __tablename__ = "engines"
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -67,6 +58,7 @@ class Engine(Base):
 
 class Sensor(Base):
     """Sensor metadata (mirrors registry.yaml)."""
+
     __tablename__ = "sensors"
 
     id = Column(String(50), primary_key=True)
@@ -84,6 +76,7 @@ class Sensor(Base):
 
 class Run(Base):
     """A simulation or import run."""
+
     __tablename__ = "runs"
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -95,7 +88,9 @@ class Run(Base):
     start_time = Column(DateTime, nullable=True)
     duration_s = Column(Float, nullable=True)
     ground_truth = Column(JSON, nullable=True)  # {fault_type, onset_s, severity, cylinder}
-    status = Column(String(20), nullable=False, default="pending")  # pending|running|complete|failed
+    status = Column(
+        String(20), nullable=False, default="pending"
+    )  # pending|running|complete|failed
     created_at = Column(DateTime, server_default=func.now())
 
     # Relationships
@@ -108,6 +103,7 @@ class Run(Base):
 
 class SensorReading(Base):
     """Telemetry time-series data (hypertable in TimescaleDB)."""
+
     __tablename__ = "sensor_readings"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -126,6 +122,7 @@ class SensorReading(Base):
 
 class SignalChunk(Base):
     """Reference to a high-rate signal file in the BlobStore."""
+
     __tablename__ = "signal_chunks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -140,13 +137,12 @@ class SignalChunk(Base):
 
     run = relationship("Run", back_populates="signal_chunks")
 
-    __table_args__ = (
-        Index("ix_chunks_run_sensor", "run_id", "sensor_id"),
-    )
+    __table_args__ = (Index("ix_chunks_run_sensor", "run_id", "sensor_id"),)
 
 
 class Window(Base):
     """Feature window extracted by the pipeline."""
+
     __tablename__ = "windows"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -162,13 +158,12 @@ class Window(Base):
     run = relationship("Run", back_populates="windows")
     predictions = relationship("Prediction", back_populates="window", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        Index("ix_windows_run", "run_id"),
-    )
+    __table_args__ = (Index("ix_windows_run", "run_id"),)
 
 
 class Model(Base):
     """Trained model metadata."""
+
     __tablename__ = "models"
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -184,6 +179,7 @@ class Model(Base):
 
 class Prediction(Base):
     """Per-window model prediction."""
+
     __tablename__ = "predictions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -200,15 +196,16 @@ class Prediction(Base):
 
     window = relationship("Window", back_populates="predictions")
     model = relationship("Model")
-    explanations = relationship("Explanation", back_populates="prediction", cascade="all, delete-orphan")
-
-    __table_args__ = (
-        Index("ix_predictions_window", "window_id"),
+    explanations = relationship(
+        "Explanation", back_populates="prediction", cascade="all, delete-orphan"
     )
+
+    __table_args__ = (Index("ix_predictions_window", "window_id"),)
 
 
 class AnomalyEvent(Base):
     """Detected anomaly/fault event."""
+
     __tablename__ = "anomaly_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -226,6 +223,7 @@ class AnomalyEvent(Base):
 
 class Explanation(Base):
     """Explainability artefact for a prediction."""
+
     __tablename__ = "explanations"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -239,6 +237,7 @@ class Explanation(Base):
 
 class OptimizationResult(Base):
     """Sweet-spot optimiser output."""
+
     __tablename__ = "optimization_results"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -253,11 +252,14 @@ class OptimizationResult(Base):
 
 class Job(Base):
     """Long-running background task tracking."""
+
     __tablename__ = "jobs"
 
     id = Column(String(36), primary_key=True, default=_uuid)
     job_type = Column(String(50), nullable=False)  # simulate|train|optimize|import
-    status = Column(String(20), nullable=False, default="pending")  # pending|running|complete|failed
+    status = Column(
+        String(20), nullable=False, default="pending"
+    )  # pending|running|complete|failed
     progress = Column(Float, nullable=True)  # 0.0 – 1.0
     result = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)

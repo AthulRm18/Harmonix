@@ -1,13 +1,12 @@
 """Sensor registry loader – reads registry.yaml and provides typed access."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from functools import lru_cache
-from typing import Optional
+from pathlib import Path
 
 import yaml
-
 
 _REGISTRY_PATH = Path(__file__).parent / "registry.yaml"
 
@@ -15,13 +14,14 @@ _REGISTRY_PATH = Path(__file__).parent / "registry.yaml"
 @dataclass(frozen=True)
 class SensorSpec:
     """Immutable specification for a single sensor."""
+
     id: str
     name: str
     unit: str
     sample_rate: int
     physical_meaning: str
     normal_range: tuple[float, float]
-    obd_pid: Optional[str]
+    obd_pid: str | None
     provenance: str  # real | synthetic | hybrid
     description: str
     category: str  # high_rate | telemetry | derived
@@ -38,6 +38,7 @@ class SensorSpec:
 @dataclass(frozen=True)
 class SensorRegistry:
     """Collection of all sensor specifications."""
+
     sensors: tuple[SensorSpec, ...] = field(default_factory=tuple)
 
     def __len__(self) -> int:
@@ -75,17 +76,19 @@ def load_registry(path: Path = _REGISTRY_PATH) -> SensorRegistry:
     specs = []
     for entry in data.get("sensors", []):
         nr = entry.get("normal_range", [0, 1])
-        specs.append(SensorSpec(
-            id=entry["id"],
-            name=entry["name"],
-            unit=entry["unit"],
-            sample_rate=entry["sample_rate"],
-            physical_meaning=entry.get("physical_meaning", "").strip(),
-            normal_range=(float(nr[0]), float(nr[1])),
-            obd_pid=entry.get("obd_pid"),
-            provenance=entry.get("provenance", "synthetic"),
-            description=entry.get("description", "").strip(),
-            category=entry.get("category", "telemetry"),
-        ))
+        specs.append(
+            SensorSpec(
+                id=entry["id"],
+                name=entry["name"],
+                unit=entry["unit"],
+                sample_rate=entry["sample_rate"],
+                physical_meaning=entry.get("physical_meaning", "").strip(),
+                normal_range=(float(nr[0]), float(nr[1])),
+                obd_pid=entry.get("obd_pid"),
+                provenance=entry.get("provenance", "synthetic"),
+                description=entry.get("description", "").strip(),
+                category=entry.get("category", "telemetry"),
+            )
+        )
 
     return SensorRegistry(sensors=tuple(specs))

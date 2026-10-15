@@ -1,10 +1,8 @@
 """API dependencies – auth seam, DB session, pagination."""
+
 from __future__ import annotations
 
-from fastapi import Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db import get_db
+from fastapi import Query
 
 
 # ── Auth seam ─────────────────────────────────────────────────────────

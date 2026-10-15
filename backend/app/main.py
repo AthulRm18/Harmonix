@@ -1,4 +1,5 @@
 """FastAPI application factory and main entry point."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -7,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.db import engine, Base
+from app.db import Base, engine
 
 
 @asynccontextmanager
@@ -45,10 +46,10 @@ def create_app() -> FastAPI:
 
     # ── Register routers ──────────────────────────────────────────────
     from app.api.health import router as health_router
-    from app.api.sensors import router as sensors_router
-    from app.api.runs import router as runs_router
     from app.api.models_api import router as models_router
     from app.api.optimize import router as optimize_router
+    from app.api.runs import router as runs_router
+    from app.api.sensors import router as sensors_router
     from app.api.websocket import router as ws_router
 
     app.include_router(health_router, tags=["Health"])

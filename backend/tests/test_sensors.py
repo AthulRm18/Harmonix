@@ -1,5 +1,7 @@
 """Tests for the sensor registry loader."""
+
 import pytest
+
 from app.sensors import load_registry
 
 

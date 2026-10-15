@@ -1,4 +1,5 @@
 """Database engine, session, and base model."""
+
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import (
@@ -13,6 +14,7 @@ from app.config import get_settings
 
 class Base(DeclarativeBase):
     """SQLAlchemy declarative base for all models."""
+
     pass
 
 

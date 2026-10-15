@@ -1,4 +1,5 @@
 """WebSocket endpoint for live simulation streaming."""
+
 from __future__ import annotations
 
 import asyncio
@@ -43,16 +44,18 @@ async def live_stream(websocket: WebSocket, run_id: str):
                 elif action == "set_speed":
                     speed = msg.get("speed", speed)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
             if not paused:
                 # TODO: fetch next window from the run and stream it
-                await websocket.send_json({
-                    "type": "heartbeat",
-                    "run_id": run_id,
-                    "speed": speed,
-                })
+                await websocket.send_json(
+                    {
+                        "type": "heartbeat",
+                        "run_id": run_id,
+                        "speed": speed,
+                    }
+                )
                 await asyncio.sleep(1.0 / max(speed, 0.5))
 
     except WebSocketDisconnect:

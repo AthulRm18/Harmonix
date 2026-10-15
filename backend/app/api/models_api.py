@@ -1,4 +1,5 @@
 """Models API – model registry and metrics."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.db.models import Model, Prediction, Explanation
+from app.db.models import Explanation, Model
 
 router = APIRouter()
 
@@ -71,9 +72,7 @@ async def get_model_metrics(model_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/predictions/{prediction_id}/explanation")
 async def get_explanation(prediction_id: int, db: AsyncSession = Depends(get_db)):
     """Get explainability artefacts for a prediction."""
-    result = await db.execute(
-        select(Explanation).where(Explanation.prediction_id == prediction_id)
-    )
+    result = await db.execute(select(Explanation).where(Explanation.prediction_id == prediction_id))
     explanations = result.scalars().all()
 
     if not explanations:

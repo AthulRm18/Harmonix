@@ -3,6 +3,7 @@
 Server-side downsampling for time-series visualisation.
 Preserves visual shape while reducing point count.
 """
+
 from __future__ import annotations
 
 import math

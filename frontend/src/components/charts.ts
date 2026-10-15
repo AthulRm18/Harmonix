@@ -30,6 +30,7 @@ export const THEME = {
 /** Base echarts option with design.md dark theme */
 export function baseOption(overrides: Partial<EChartsOption> = {}): EChartsOption {
   return {
+    animation: false,
     backgroundColor: 'transparent',
     textStyle: {
       fontFamily: THEME.fontFamily,
@@ -68,6 +69,7 @@ export function lineChartOption(
     area?: boolean;
     yAxisName?: string;
     markLine?: number;
+    currentTime?: number;
   } = {},
 ): EChartsOption {
   const color = opts.color || THEME.primary;
@@ -101,9 +103,18 @@ export function lineChartOption(
         areaStyle: opts.area
           ? { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: color + '30' }, { offset: 1, color: color + '05' }] } }
           : undefined,
-        markLine: opts.markLine !== undefined
-          ? { data: [{ yAxis: opts.markLine, lineStyle: { color: THEME.success, type: 'dashed' } }], silent: true }
-          : undefined,
+        markLine:
+          opts.currentTime !== undefined
+            ? {
+                symbol: ['none', 'none'],
+                silent: true,
+                animation: false,
+                lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
+                data: [{ xAxis: opts.currentTime }],
+              }
+            : opts.markLine !== undefined
+              ? { data: [{ yAxis: opts.markLine, lineStyle: { color: THEME.success, type: 'dashed' } }], silent: true }
+              : undefined,
       },
     ],
   });
@@ -264,7 +275,11 @@ export function scatterChartOption(
 /** Multi-line chart for multiple sensor signals overlaid */
 export function multiLineOption(
   series: { name: string; timestamps: number[]; values: number[]; color?: string }[],
-  opts: { yAxisName?: string } = {},
+  opts: {
+    yAxisName?: string;
+    currentTime?: number;
+    anomalyOnset?: number;
+  } = {},
 ): EChartsOption {
   return baseOption({
     legend: {
@@ -297,9 +312,35 @@ export function multiLineOption(
       smooth: false,
       showSymbol: false,
       lineStyle: { color: s.color || THEME.palette[i % THEME.palette.length], width: 1.5 },
+      markLine:
+        i === 0 && opts.currentTime !== undefined
+          ? {
+              symbol: ['none', 'none'],
+              silent: true,
+              animation: false,
+              lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
+              label: {
+                show: true,
+                formatter: `${opts.currentTime.toFixed(1)}s`,
+                position: 'insideEndTop',
+                color: THEME.ink,
+                fontSize: 10,
+              },
+              data: [{ xAxis: opts.currentTime }],
+            }
+          : undefined,
+      markArea:
+        i === 0 && opts.anomalyOnset !== undefined
+          ? {
+              silent: true,
+              itemStyle: { color: 'rgba(229, 83, 75, 0.12)' },
+              data: [[{ xAxis: opts.anomalyOnset }, { xAxis: 99999 }]],
+            }
+          : undefined,
     })),
   });
 }
+
 
 /** Gauge chart for health index / probability */
 export function gaugeOption(

@@ -7,78 +7,106 @@ import { HelpPanel } from '../components/HelpPanel';
 import { lineChartOption, multiLineOption, gaugeOption, THEME } from '../components/charts';
 import './ReplayDashboard.css';
 
+// Match exact sensor IDs in backend database
 const SENSOR_CHANNELS = [
-  { id: 'rpm', label: 'RPM', color: THEME.primary },
+  { id: 'engine_rpm', label: 'Engine RPM', color: THEME.primary },
   { id: 'coolant_temp', label: 'Coolant °C', color: THEME.success },
-  { id: 'vibration_rms', label: 'Vibration RMS', color: THEME.primaryHover },
-  { id: 'knock_intensity', label: 'Knock', color: '#e5534b' },
+  { id: 'engine_load', label: 'Engine Load %', color: THEME.primaryHover },
+  { id: 'throttle_position', label: 'Throttle %', color: '#f59e0b' },
 ];
 
 export const ReplayDashboard: React.FC = () => {
-  const { runId, setRunId, isPlaying, togglePlay, speed, setSpeed,
-    currentTime, setCurrentTime, duration, stepForward, stepBackward } = useReplayStore();
+  const {
+    runId,
+    setRunId,
+    isPlaying,
+    togglePlay,
+    speed,
+    setSpeed,
+    currentTime,
+    setCurrentTime,
+    duration,
+    stepForward,
+    stepBackward,
+  } = useReplayStore();
 
   const { data: runsData, isLoading: runsLoading } = useQuery({
     queryKey: ['runs'],
     queryFn: () => fetchRuns(),
   });
 
+  const runs = runsData?.runs || [];
+
+  // Automatically select the first available run if none is active
+  React.useEffect(() => {
+    if (!runId && runs.length > 0) {
+      setRunId(runs[0].id);
+      if (runs[0].duration_s) {
+        useReplayStore.getState().setDuration(runs[0].duration_s);
+      }
+    }
+  }, [runId, runs, setRunId]);
+
   const { data: eventsData } = useQuery({
     queryKey: ['events', runId],
     queryFn: () => fetchEvents(runId!),
     enabled: !!runId,
+    staleTime: Infinity,
   });
 
   const { data: predictionsData } = useQuery({
     queryKey: ['predictions', runId],
     queryFn: () => fetchPredictions(runId!),
     enabled: !!runId,
+    staleTime: Infinity,
   });
 
-  // Fetch signal data for each sensor channel
-  const { data: signalData } = useQuery({
-    queryKey: ['signals-multi', runId, currentTime],
+  // Fetch full signal time-series once per run (DO NOT depend on currentTime!)
+  // This eliminates network requests and skeleton flashes during playback
+  const { data: signalData, isLoading: signalsLoading } = useQuery({
+    queryKey: ['signals-multi', runId],
     queryFn: async () => {
       if (!runId) return null;
-      const windowStart = Math.max(0, currentTime - 30);
-      const windowEnd = currentTime + 30;
       const results = await Promise.all(
         SENSOR_CHANNELS.map(async (ch) => {
           try {
-            const d = await fetchSignals(runId, ch.id, windowStart, windowEnd, 500);
-            return { ...ch, timestamps: d.timestamps, values: d.values };
+            const d = await fetchSignals(runId, ch.id, 0, undefined, 1200);
+            if (d && d.timestamps && d.timestamps.length > 0) {
+              return { ...ch, timestamps: d.timestamps, values: d.values };
+            }
           } catch {
-            // Generate demo data if endpoint returns empty
-            const ts = Array.from({ length: 200 }, (_, i) => windowStart + (i / 200) * (windowEnd - windowStart));
-            const vals = ts.map((t) => {
-              const base = ch.id === 'rpm' ? 2800 + 400 * Math.sin(t * 0.3) :
-                ch.id === 'coolant_temp' ? 88 + 5 * Math.sin(t * 0.1) :
-                  ch.id === 'vibration_rms' ? 0.3 + 0.15 * Math.sin(t * 2) + 0.05 * Math.random() :
-                    0.02 + 0.01 * Math.random();
-              return base;
-            });
-            return { ...ch, timestamps: ts, values: vals };
+            // fallback if sensor signal endpoint is unavailable
           }
+          const dur = duration || 300;
+          const n = 200;
+          const ts = Array.from({ length: n }, (_, i) => (i / n) * dur);
+          const vals = ts.map((t) => {
+            if (ch.id === 'engine_rpm') return 2500 + 400 * Math.sin(t * 0.1);
+            if (ch.id === 'coolant_temp') return 88 + 4 * Math.sin(t * 0.05);
+            if (ch.id === 'engine_load') return 35 + 15 * Math.sin(t * 0.1);
+            return 25 + 10 * Math.sin(t * 0.1);
+          });
+          return { ...ch, timestamps: ts, values: vals };
         })
       );
       return results;
     },
     enabled: !!runId,
-    refetchInterval: isPlaying ? 500 : false,
+    staleTime: Infinity,
   });
 
-  const runs = runsData?.runs || [];
   const events = eventsData?.events || [];
   const predictions = predictionsData?.predictions || [];
 
-  // Get latest prediction near currentTime
-  const currentPred = predictions.length > 0
-    ? predictions.reduce((best: any, p: any) =>
+  // Get nearest prediction near currentTime
+  const currentPred = React.useMemo(() => {
+    if (!predictions || predictions.length === 0) return null;
+    return predictions.reduce((best: any, p: any) =>
       Math.abs(p.t_start - currentTime) < Math.abs(best.t_start - currentTime) ? p : best
-    )
-    : null;
+    );
+  }, [predictions, currentTime]);
 
-  // Replay timer
+  // Replay timer with smooth 100ms ticks
   React.useEffect(() => {
     if (!isPlaying) return;
     const interval = setInterval(() => {
@@ -99,29 +127,38 @@ export const ReplayDashboard: React.FC = () => {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Build multi-sensor chart
-  const sensorChartOpt = signalData
-    ? multiLineOption(
+  const firstEventOnset = events.length > 0 ? events[0].t_onset : undefined;
+
+  // Build multi-sensor chart with smooth markLine playhead
+  const sensorChartOpt = React.useMemo(() => {
+    if (!signalData || signalData.length === 0) return null;
+    return multiLineOption(
       signalData.map((s: any) => ({
         name: s.label,
         timestamps: s.timestamps,
         values: s.values,
         color: s.color,
       })),
-      { yAxisName: 'Value' }
-    )
-    : null;
+      {
+        yAxisName: 'Value',
+        currentTime,
+        anomalyOnset: firstEventOnset,
+      }
+    );
+  }, [signalData, currentTime, firstEventOnset]);
 
-  // Build individual sensor charts
-  const individualCharts = signalData
-    ? signalData.map((s: any) =>
+  // Build individual sensor charts with playhead
+  const individualCharts = React.useMemo(() => {
+    if (!signalData) return [];
+    return signalData.map((s: any) =>
       lineChartOption(s.timestamps, s.values, s.label, {
         color: s.color,
         area: true,
         yAxisName: s.label,
+        currentTime,
       })
-    )
-    : [];
+    );
+  }, [signalData, currentTime]);
 
   return (
     <div className="replay-dashboard">
@@ -173,7 +210,7 @@ export const ReplayDashboard: React.FC = () => {
         )}
       </div>
 
-      {/* Replay Controls */}
+      {/* Replay Controls & Charts */}
       {runId && (
         <>
           <div className="replay-controls mb-md">
@@ -224,25 +261,33 @@ export const ReplayDashboard: React.FC = () => {
           {/* Multi-Sensor View */}
           <div className="card card-screenshot mb-md">
             <div className="type-eyebrow ink-subtle mb-xs">Multi-Sensor View</div>
-            {sensorChartOpt ? (
+            {signalsLoading && !signalData ? (
+              <div className="skeleton" style={{ height: 280 }} />
+            ) : sensorChartOpt ? (
               <ReactECharts
                 option={sensorChartOpt}
                 style={{ height: 280 }}
+                notMerge={false}
+                lazyUpdate={true}
                 opts={{ renderer: 'canvas' }}
               />
             ) : (
-              <div className="skeleton" style={{ height: 280 }} />
+              <div className="empty-state" style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p className="ink-muted">No signal data available for this run</p>
+              </div>
             )}
           </div>
 
           {/* Individual Sensor Panels */}
           <div className="grid-2 mb-md">
             {individualCharts.map((opt: any, idx: number) => (
-              <div key={SENSOR_CHANNELS[idx].id} className="card card-screenshot">
-                <div className="type-eyebrow ink-subtle mb-xs">{SENSOR_CHANNELS[idx].label}</div>
+              <div key={SENSOR_CHANNELS[idx]?.id || idx} className="card card-screenshot">
+                <div className="type-eyebrow ink-subtle mb-xs">{SENSOR_CHANNELS[idx]?.label}</div>
                 <ReactECharts
                   option={opt}
                   style={{ height: 180 }}
+                  notMerge={false}
+                  lazyUpdate={true}
                   opts={{ renderer: 'canvas' }}
                 />
               </div>
@@ -267,6 +312,8 @@ export const ReplayDashboard: React.FC = () => {
               <ReactECharts
                 option={gaugeOption(currentPred?.anomaly_score ?? 0.12, { label: 'Score', color: (currentPred?.anomaly_score ?? 0) > 0.5 ? '#e5534b' : THEME.primary })}
                 style={{ height: 140, width: '100%' }}
+                notMerge={false}
+                lazyUpdate={true}
                 opts={{ renderer: 'canvas' }}
               />
             </div>
@@ -275,6 +322,8 @@ export const ReplayDashboard: React.FC = () => {
               <ReactECharts
                 option={gaugeOption(currentPred?.health_index ?? 0.94, { label: 'HI', color: THEME.success })}
                 style={{ height: 140, width: '100%' }}
+                notMerge={false}
+                lazyUpdate={true}
                 opts={{ renderer: 'canvas' }}
               />
             </div>

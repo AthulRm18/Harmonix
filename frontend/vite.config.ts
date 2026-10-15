@@ -7,4 +7,20 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('echarts') || id.includes('zrender')) {
+            return 'echarts';
+          }
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'react';
+          }
+        },
+      },
+    },
+  },
+
 });
+

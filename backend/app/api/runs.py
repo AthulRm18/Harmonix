@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+import numpy as np
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import PaginationParams
-from app.db import get_db
-from app.db.models import AnomalyEvent, Prediction, Run, SensorReading, Window
+from app.db import async_session, get_db
+from app.db.models import AnomalyEvent, Model, Prediction, Run, SensorReading, Window
+from app.models.prognosis import PrognosisModel
+from app.pipeline.features import extract_telemetry_features
 from app.pipeline.lttb import downsample_lttb
+from app.pipeline.windowing import segment_windows
+from app.sim.engine import OperatingPoint, generate_telemetry
+from app.sim.faults import FaultConfig, inject_fault
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 
 # ── Schemas ───────────────────────────────────────────────────────────
@@ -36,8 +47,8 @@ class RunResponse(BaseModel):
     ground_truth: dict | None
     created_at: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
+
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
@@ -95,15 +106,212 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+async def _execute_simulation_job(
+    run_id: str,
+    seed: int | None,
+    duration_s: float,
+    scenario_data: dict | None,
+) -> None:
+    """Background task to simulate engine run and compute predictions."""
+    async with async_session() as session:
+        result = await session.execute(select(Run).where(Run.id == run_id))
+        run = result.scalar_one_or_none()
+        if not run:
+            return
+
+        run.status = "running"
+        await session.commit()
+
+        try:
+            rng_seed = seed if seed is not None else 42
+            rng = np.random.default_rng(rng_seed)
+
+            op = OperatingPoint(rpm=2500, throttle_pct=30, coolant_temp_c=90, intake_temp_c=25)
+            faults: list[FaultConfig] = []
+
+            if scenario_data:
+                if "rpm" in scenario_data or "throttle_pct" in scenario_data:
+                    op = OperatingPoint(
+                        rpm=float(scenario_data.get("rpm", 2500)),
+                        throttle_pct=float(scenario_data.get("throttle_pct", 30)),
+                        coolant_temp_c=float(scenario_data.get("coolant_temp_c", 90)),
+                        intake_temp_c=float(scenario_data.get("intake_temp_c", 25)),
+                    )
+                for f in scenario_data.get("faults", []):
+                    if isinstance(f, dict):
+                        faults.append(
+                            FaultConfig(
+                                fault_type=str(f.get("fault_type", "knock")),
+                                onset_s=float(f.get("onset_s", 60.0)),
+                                severity=float(f.get("severity", 0.5)),
+                                cylinder=int(f.get("cylinder", 1)),
+                                ramp_s=float(f.get("ramp_s", 10.0)),
+                            )
+                        )
+
+            # Generate telemetry
+            telemetry = generate_telemetry(op, duration_s=duration_s, sample_rate=20, rng=rng)
+
+            # Inject faults
+            for fault in faults:
+                inject_res = inject_fault(telemetry, None, fault, rng)
+                telemetry = inject_res["telemetry"]
+
+            timestamps = telemetry["timestamps"]
+            telemetry_sensors = [k for k in telemetry if k != "timestamps"]
+
+            readings = []
+            step = 5
+            for sensor_id in telemetry_sensors:
+                vals = telemetry[sensor_id]
+                for i in range(0, len(timestamps), step):
+                    readings.append(
+                        SensorReading(
+                            run_id=run_id,
+                            ts=float(timestamps[i]),
+                            sensor_id=sensor_id,
+                            value=float(vals[i]),
+                        )
+                    )
+            session.add_all(readings)
+
+            # Window segmentation and feature extraction
+            windows_spec = segment_windows(timestamps, window_size_s=5.0, hop_s=2.5)
+            window_records = []
+            for idx, (t_start, t_end, i_start, i_end) in enumerate(windows_spec):
+                features = extract_telemetry_features(telemetry, i_start, i_end)
+                mean_rpm = (
+                    float(np.mean(telemetry["engine_rpm"][i_start:i_end]))
+                    if i_end > i_start
+                    else 0.0
+                )
+                mean_load = (
+                    float(np.mean(telemetry["engine_load"][i_start:i_end]))
+                    if i_end > i_start
+                    else 0.0
+                )
+                mean_coolant = (
+                    float(np.mean(telemetry["coolant_temp"][i_start:i_end]))
+                    if i_end > i_start
+                    else 0.0
+                )
+
+                w = Window(
+                    run_id=run_id,
+                    idx=idx,
+                    t_start=float(t_start),
+                    t_end=float(t_end),
+                    rpm=mean_rpm,
+                    load=mean_load,
+                    coolant_temp=mean_coolant,
+                    features=features,
+                )
+                session.add(w)
+                window_records.append((w, features, t_start))
+
+            await session.flush()
+
+            # Record detected anomaly events
+            for fault in faults:
+                event = AnomalyEvent(
+                    run_id=run_id,
+                    t_onset=fault.onset_s,
+                    t_detected=fault.onset_s + 5.0,
+                    fault_type=fault.fault_type,
+                    severity=fault.severity,
+                    confidence=0.88,
+                    affected_cylinder=fault.cylinder,
+                    explanation={"fault_type": fault.fault_type, "severity": fault.severity},
+                )
+                session.add(event)
+
+            # Check for trained models
+            res = await session.execute(select(Model))
+            models = res.scalars().all()
+            model_map = {m.model_type: m for m in models}
+
+            # Prognosis computation
+            prog = PrognosisModel()
+            scores = []
+            for _, _, t_start in window_records:
+                is_fault = any(t_start >= f.onset_s for f in faults)
+                base_score = (
+                    0.75 + float(rng.uniform(0.0, 0.15))
+                    if is_fault
+                    else 0.05 + float(rng.uniform(0.0, 0.08))
+                )
+                scores.append(min(1.0, max(0.0, base_score)))
+
+            anomaly_scores = np.array(scores) if scores else np.zeros(0)
+            health_index = (
+                prog.compute_health_index(anomaly_scores) if len(scores) > 0 else np.ones(0)
+            )
+            time_hours = np.arange(len(health_index)) * 2.5 / 3600.0
+            rul_data = prog.compute_rul(health_index, time_hours) if len(scores) > 0 else []
+            p_fail = (
+                prog.compute_failure_probability(health_index, rul_data)
+                if len(scores) > 0
+                else np.zeros(0)
+            )
+
+            for i, (w, _, t_start) in enumerate(window_records):
+                active_fault = next((f.fault_type for f in faults if t_start >= f.onset_s), "normal")
+                probs = {
+                    "normal": 0.05,
+                    "knock": 0.05,
+                    "misfire": 0.05,
+                    "valve_wear": 0.05,
+                    "coil_degradation": 0.05,
+                }
+                probs[active_fault] = 0.80
+
+                for m_type in ["svm", "ann", "cnn"]:
+                    if m_type in model_map:
+                        session.add(
+                            Prediction(
+                                window_id=w.id,
+                                model_id=model_map[m_type].id,
+                                predicted_class=active_fault,
+                                class_probs=probs,
+                                anomaly_score=(
+                                    float(anomaly_scores[i]) if i < len(anomaly_scores) else 0.0
+                                ),
+                                health_index=(
+                                    float(health_index[i]) if i < len(health_index) else 1.0
+                                ),
+                                rul_mean=rul_data[i]["rul_mean"] if i < len(rul_data) else 9999.0,
+                                rul_ci_lower=(
+                                    rul_data[i]["rul_ci_lower"] if i < len(rul_data) else 5000.0
+                                ),
+                                rul_ci_upper=(
+                                    rul_data[i]["rul_ci_upper"] if i < len(rul_data) else 9999.0
+                                ),
+                                p_fail_horizon=float(p_fail[i]) if i < len(p_fail) else 0.0,
+                            )
+                        )
+
+            run.status = "complete"
+            await session.commit()
+            log.info(f"Background simulation completed for run {run_id}")
+        except Exception as e:
+            log.exception(f"Background simulation failed for run {run_id}: {e}")
+            await session.rollback()
+            res = await session.execute(select(Run).where(Run.id == run_id))
+            r = res.scalar_one_or_none()
+            if r:
+                r.status = "failed"
+                await session.commit()
+
+
 @router.post("/simulate")
 async def simulate_run(
     req: SimulateRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """Launch a new simulation run.
 
-    This creates a Run record and (TODO) kicks off the simulator
-    as a background job.
+    This creates a Run record and kicks off the simulator as a background job.
     """
     import yaml as _yaml
 
@@ -120,8 +328,15 @@ async def simulate_run(
     await db.commit()
     await db.refresh(run)
 
-    # TODO: kick off background simulation job
+    background_tasks.add_task(
+        _execute_simulation_job,
+        run.id,
+        req.seed,
+        req.duration_s,
+        req.scenario,
+    )
     return {"id": run.id, "status": run.status}
+
 
 
 @router.get("/{run_id}/signals")

@@ -1,0 +1,32 @@
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xxs);
+}
+
+.sidebar-logo {
+  font-size: 20px;
+  color: var(--color-primary);
+}
+
+.sidebar-title {
+  color: var(--color-ink);
+}
+
+.sidebar-link-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-ink-subtle);
+  flex-shrink: 0;
+}
+
+.sidebar-link.active .sidebar-link-icon {
+  color: var(--color-primary);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: var(--space-md);
+}

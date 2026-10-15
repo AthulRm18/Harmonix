@@ -1,0 +1,88 @@
+[project]
+name = "enginesense-backend"
+version = "0.1.0"
+description = "EngineSense – Automobile engine signature extraction and pattern recognition"
+requires-python = ">=3.11"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-multipart>=0.0.9",
+    "websockets>=12.0",
+
+    # Database
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29.0",
+    "aiosqlite>=0.20.0",
+    "greenlet>=3.0",
+
+    # DSP and data
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "librosa>=0.10",
+    "pandas>=2.2",
+    "polars>=0.20",
+    "pyarrow>=15.0",
+
+    # ML - scikit-learn
+    "scikit-learn>=1.4",
+
+    # ML - PyTorch (CPU)
+    "torch>=2.2",
+    "torchvision>=0.17",
+
+    # Explainability
+    "shap>=0.45",
+    "captum>=0.7",
+
+    # Change-point detection
+    "ruptures>=1.1",
+
+    # Optimisation
+    "optuna>=3.5",
+    "pymoo>=0.6",
+
+    # MLflow
+    "mlflow>=2.11",
+
+    # Utilities
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "orjson>=3.9",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.3",
+    "mypy>=1.8",
+    "pre-commit>=3.6",
+    "httpx>=0.27",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"

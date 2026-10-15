@@ -1,0 +1,253 @@
+# Sensor Registry – Single Source of Truth
+# Each sensor is identified by a unique `id` and described with metadata
+# shown in the UI and used by the pipeline.
+
+sensors:
+  # ── High-rate streams ──────────────────────────────────────────────
+  - id: acoustic_mic
+    name: Engine Microphone
+    unit: Pa
+    sample_rate: 16000
+    physical_meaning: >
+      Sound pressure captured by a microphone mounted near the engine block.
+      Contains combustion noise, intake/exhaust harmonics, and mechanical impacts.
+    normal_range: [-1.0, 1.0]
+    obd_pid: null
+    provenance: synthetic
+    description: >
+      Acoustic signal from an engine-mounted microphone at 16 kHz.
+      Carries combustion signatures, knock events, and valve-train noise.
+    category: high_rate
+
+  - id: accel_block
+    name: Block Accelerometer
+    unit: g
+    sample_rate: 25600
+    physical_meaning: >
+      Vibration acceleration measured on the engine block surface.
+      Dominated by combustion forces, piston slap, and bearing impacts.
+    normal_range: [-50.0, 50.0]
+    obd_pid: null
+    provenance: synthetic
+    description: >
+      Tri-axial accelerometer on the engine block at 25.6 kHz.
+      Primary sensor for knock detection, valve-train wear, and bearing faults.
+    category: high_rate
+
+  - id: ignition_coil_current
+    name: Ignition Coil Current
+    unit: A
+    sample_rate: 10000
+    physical_meaning: >
+      Primary-side current waveform of the ignition coil.
+      Shows charge ramp, dwell, and spark discharge characteristics.
+    normal_range: [0.0, 12.0]
+    obd_pid: null
+    provenance: synthetic
+    description: >
+      Ignition coil primary current at 10 kHz. Used to detect coil degradation,
+      weak spark, and intermittent misfires from the electrical system.
+    category: high_rate
+
+  # ── Telemetry streams (OBD-II / CAN, 10–20 Hz) ────────────────────
+  - id: engine_rpm
+    name: Engine RPM
+    unit: rpm
+    sample_rate: 20
+    physical_meaning: >
+      Crankshaft rotational speed derived from the crank position sensor.
+    normal_range: [600, 7000]
+    obd_pid: "0x010C"
+    provenance: hybrid
+    description: >
+      Engine speed in revolutions per minute. Fundamental operating parameter.
+    category: telemetry
+
+  - id: vehicle_speed
+    name: Vehicle Speed
+    unit: km/h
+    sample_rate: 10
+    physical_meaning: >
+      Road speed from the vehicle speed sensor or ABS wheel speed.
+    normal_range: [0, 250]
+    obd_pid: "0x010D"
+    provenance: hybrid
+    description: >
+      Vehicle road speed. Correlates with engine load and gear selection.
+    category: telemetry
+
+  - id: throttle_position
+    name: Throttle Position
+    unit: "%"
+    sample_rate: 20
+    physical_meaning: >
+      Throttle plate opening angle as a percentage of wide-open throttle.
+    normal_range: [0, 100]
+    obd_pid: "0x0111"
+    provenance: hybrid
+    description: >
+      Driver demand signal. Primary input for load estimation.
+    category: telemetry
+
+  - id: engine_load
+    name: Calculated Engine Load
+    unit: "%"
+    sample_rate: 20
+    physical_meaning: >
+      ECU-calculated load value normalised to peak available torque.
+    normal_range: [0, 100]
+    obd_pid: "0x0104"
+    provenance: hybrid
+    description: >
+      Indicates how hard the engine is working relative to its maximum capacity.
+    category: telemetry
+
+  - id: coolant_temp
+    name: Coolant Temperature
+    unit: "°C"
+    sample_rate: 10
+    physical_meaning: >
+      Engine coolant temperature from the ECT sensor.
+    normal_range: [70, 110]
+    obd_pid: "0x0105"
+    provenance: hybrid
+    description: >
+      Engine operating temperature. Affects combustion efficiency and knock tendency.
+    category: telemetry
+
+  - id: intake_air_temp
+    name: Intake Air Temperature
+    unit: "°C"
+    sample_rate: 10
+    physical_meaning: >
+      Temperature of air entering the intake manifold.
+    normal_range: [-20, 60]
+    obd_pid: "0x010F"
+    provenance: hybrid
+    description: >
+      Ambient/charged air temperature. Higher temps increase knock risk.
+    category: telemetry
+
+  - id: map_kpa
+    name: Manifold Absolute Pressure
+    unit: kPa
+    sample_rate: 20
+    physical_meaning: >
+      Absolute pressure in the intake manifold, indicating engine vacuum/boost.
+    normal_range: [20, 250]
+    obd_pid: "0x010B"
+    provenance: hybrid
+    description: >
+      Intake manifold pressure. Key input for fuel and ignition calculations.
+    category: telemetry
+
+  - id: maf_gps
+    name: Mass Airflow
+    unit: g/s
+    sample_rate: 20
+    physical_meaning: >
+      Mass of air entering the engine per second, measured by the MAF sensor.
+    normal_range: [0, 300]
+    obd_pid: "0x0110"
+    provenance: hybrid
+    description: >
+      Air mass flow rate. Combined with lambda, determines fuel flow.
+    category: telemetry
+
+  - id: stft
+    name: Short-Term Fuel Trim
+    unit: "%"
+    sample_rate: 10
+    physical_meaning: >
+      ECU's real-time correction to the base fuel pulse width.
+      Positive = adding fuel (lean correction), negative = removing fuel (rich correction).
+    normal_range: [-25, 25]
+    obd_pid: "0x0106"
+    provenance: hybrid
+    description: >
+      Instantaneous fuel correction. Spikes indicate air/fuel imbalances (leaks, injector issues).
+    category: telemetry
+
+  - id: ltft
+    name: Long-Term Fuel Trim
+    unit: "%"
+    sample_rate: 10
+    physical_meaning: >
+      Learned long-term correction to the fuel map.
+      Compensates for persistent offsets (aging sensors, deposits).
+    normal_range: [-15, 15]
+    obd_pid: "0x0107"
+    provenance: hybrid
+    description: >
+      Slow-adapting fuel correction. Large values indicate systematic drift.
+    category: telemetry
+
+  - id: lambda_o2
+    name: Wideband O₂ / Lambda
+    unit: λ
+    sample_rate: 20
+    physical_meaning: >
+      Air-fuel ratio normalised to stoichiometric (14.7:1).
+      λ = 1.0 is stoichiometric; < 1.0 is rich; > 1.0 is lean.
+    normal_range: [0.7, 1.3]
+    obd_pid: "0x0124"
+    provenance: hybrid
+    description: >
+      Real-time air-fuel ratio. Misfire causes lambda spikes (lean excursion).
+    category: telemetry
+
+  - id: ignition_timing_advance
+    name: Ignition Timing Advance
+    unit: "°BTDC"
+    sample_rate: 20
+    physical_meaning: >
+      Spark timing relative to top dead centre.
+      Retarded timing reduces knock risk but costs power/efficiency.
+    normal_range: [-10, 45]
+    obd_pid: "0x010E"
+    provenance: hybrid
+    description: >
+      Spark advance angle. The ECU retards timing when knock is detected.
+    category: telemetry
+
+  - id: module_voltage
+    name: Control Module Voltage
+    unit: V
+    sample_rate: 10
+    physical_meaning: >
+      Battery/alternator voltage as seen by the ECU.
+    normal_range: [11.5, 15.0]
+    obd_pid: "0x0142"
+    provenance: hybrid
+    description: >
+      System voltage. Low voltage affects ignition coil charge and sensor accuracy.
+    category: telemetry
+
+  - id: oil_temp
+    name: Oil Temperature
+    unit: "°C"
+    sample_rate: 10
+    physical_meaning: >
+      Engine oil temperature from the oil temp sensor or estimated by the ECU.
+    normal_range: [60, 130]
+    obd_pid: "0x015C"
+    provenance: hybrid
+    description: >
+      Oil temperature affects viscosity, bearing clearances, and wear rate.
+    category: telemetry
+
+  # ── Derived stream ──────────────────────────────────────────────────
+  - id: crank_speed_fluctuation
+    name: Crank Speed Fluctuation
+    unit: rpm
+    sample_rate: 20
+    physical_meaning: >
+      Instantaneous RPM deviation from the running average.
+      Computed from the RPM signal or crank position sensor.
+      Misfire causes characteristic dips in the crank speed profile.
+    normal_range: [-50, 50]
+    obd_pid: null
+    provenance: synthetic
+    description: >
+      Derived from engine RPM. Cyclic variations indicate misfire or combustion instability.
+    category: derived

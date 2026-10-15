@@ -17,7 +17,7 @@ export const Sidebar: React.FC = () => {
       <div className="sidebar-header">
         <div className="sidebar-brand">
           <span className="sidebar-logo">⚙</span>
-          <span className="sidebar-title type-card-title">EngineSense</span>
+          <span className="sidebar-title type-card-title">Harmonix</span>
         </div>
         <p className="type-caption ink-subtle">Engine Diagnostics</p>
       </div>

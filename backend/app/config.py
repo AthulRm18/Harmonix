@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     """
 
     # ── Application ──────────────────────────────────────────────────
-    APP_NAME: str = "EngineSense"
+    APP_NAME: str = "Harmonix"
     APP_VERSION: str = "0.1.0"
+
     DEBUG: bool = False
 
     # ── Database ─────────────────────────────────────────────────────

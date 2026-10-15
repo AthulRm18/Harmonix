@@ -32,7 +32,9 @@ def _build_engine():
 
 
 engine = _build_engine()
+async_engine = engine  # alias used by seed script
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+AsyncSessionLocal = async_session  # alias used by seed script
 
 
 async def get_db() -> AsyncSession:  # type: ignore[misc]

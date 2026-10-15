@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     )
 
     # ── Register routers ──────────────────────────────────────────────
+    from app.api.explain import router as explain_router
     from app.api.health import router as health_router
     from app.api.models_api import router as models_router
     from app.api.optimize import router as optimize_router
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(models_router, prefix="/models", tags=["Models"])
     app.include_router(optimize_router, prefix="/optimize", tags=["Optimizer"])
     app.include_router(ws_router, tags=["WebSocket"])
+    app.include_router(explain_router, tags=["Explain"])
 
     return app
 

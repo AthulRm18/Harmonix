@@ -12,28 +12,26 @@ export const SignaturesLab: React.FC = () => {
 
   const [showHealthy, setShowHealthy] = useState(false);
 
-  // Discrete 1.0-second engine analysis window (prevents firing 10 queries/sec during playback)
-  const windowSecond = Math.max(0, Math.floor(currentTime));
-  const windowT0 = windowSecond;
-  const windowT1 = windowSecond + 1.0;
-  const stftT0 = Math.max(0, windowSecond - 2);
-  const stftT1 = Math.min(duration || 300, windowSecond + 2);
+  // Responsive 0.5-second engine analysis step (updates twice a second during live playback)
+  const windowStep = Math.max(0, Math.floor(currentTime * 2) / 2);
+  const windowT0 = windowStep;
+  const windowT1 = windowStep + 1.0;
+  const stftT0 = Math.max(0, windowStep - 2);
+  const stftT1 = Math.min(duration || 300, windowStep + 2);
 
-  // Waveform query with cached placeholderData
+  // Waveform query
   const { data: rawWaveformData } = useQuery({
-    queryKey: ['waveform', effectiveRunId, windowT0, windowT1],
+    queryKey: ['waveform', effectiveRunId, windowT0],
     queryFn: () => fetchWaveform(effectiveRunId, 'vibration', windowT0, windowT0 + 0.05),
-    placeholderData: (prev) => prev,
-    staleTime: 300_000,
+    staleTime: 1000,
     enabled: !!runId,
   });
 
-  // FFT query with cached placeholderData
+  // FFT query
   const { data: rawFftData } = useQuery({
-    queryKey: ['fft', effectiveRunId, windowT0, windowT1],
+    queryKey: ['fft', effectiveRunId, windowT0],
     queryFn: () => fetchFFT(effectiveRunId, 'vibration', windowT0, windowT1),
-    placeholderData: (prev) => prev,
-    staleTime: 300_000,
+    staleTime: 1000,
     enabled: !!runId,
   });
 
@@ -41,44 +39,42 @@ export const SignaturesLab: React.FC = () => {
   const { data: healthyFftData } = useQuery({
     queryKey: ['fft-healthy', effectiveRunId],
     queryFn: () => fetchFFT(effectiveRunId, 'vibration', 0.5, 1.5),
-    placeholderData: (prev) => prev,
     staleTime: 300_000,
     enabled: showHealthy && !!runId,
   });
 
-  // STFT query with cached placeholderData
+  // STFT query
   const { data: rawStftData } = useQuery({
-    queryKey: ['stft', effectiveRunId, stftT0, stftT1],
+    queryKey: ['stft', effectiveRunId, stftT0],
     queryFn: () => fetchSTFT(effectiveRunId, 'vibration', stftT0, stftT1),
-    placeholderData: (prev) => prev,
-    staleTime: 300_000,
+    staleTime: 2000,
     enabled: !!runId,
   });
 
-  // Envelope query with cached placeholderData
+  // Envelope query
   const { data: rawEnvData } = useQuery({
-    queryKey: ['envelope', effectiveRunId, windowT0, windowT1],
+    queryKey: ['envelope', effectiveRunId, windowT0],
     queryFn: () => fetchEnvelope(effectiveRunId, 'vibration', windowT0, windowT1),
-    placeholderData: (prev) => prev,
-    staleTime: 300_000,
+    staleTime: 1000,
     enabled: !!runId,
   });
 
-  // Order spectrum query with cached placeholderData
+  // Order spectrum query
   const { data: rawOrderData } = useQuery({
-    queryKey: ['order', effectiveRunId, windowT0, windowT1],
+    queryKey: ['order', effectiveRunId, windowT0],
     queryFn: () => fetchOrderSpectrum(effectiveRunId, 'vibration', windowT0, windowT1, 3000),
-    placeholderData: (prev) => prev,
-    staleTime: 300_000,
+    staleTime: 1000,
     enabled: !!runId,
   });
 
-  // High-fidelity fallback / current data resolvers (ensures zero empty black skeleton flash)
+  // High-fidelity fallback / current data resolvers (ensures continuous movement during live playback)
   const waveformData = useMemo(() => {
     if (rawWaveformData?.timestamps?.length) return rawWaveformData;
     const n = 160;
     const ts = Array.from({ length: n }, (_, i) => windowT0 + (i / n) * 0.05);
-    const vs = ts.map((t) => Math.sin(2 * Math.PI * 60 * t) * 0.75 + Math.sin(2 * Math.PI * 180 * t) * 0.25);
+    const rpmSim = 2500 + 600 * Math.sin(windowT0 * 0.15);
+    const fFire = (rpmSim / 60) * 2;
+    const vs = ts.map((t) => Math.sin(2 * Math.PI * fFire * t) * 0.8 + Math.sin(2 * Math.PI * (fFire * 2) * t) * 0.35 + 0.15 * Math.sin(2 * Math.PI * 6000 * t));
     return { timestamps: ts, values: vs };
   }, [rawWaveformData, windowT0]);
 
@@ -86,31 +82,37 @@ export const SignaturesLab: React.FC = () => {
     if (rawFftData?.frequencies?.length) return rawFftData;
     const n = 350;
     const freqs = Array.from({ length: n }, (_, i) => i * 12);
+    const rpmSim = 2500 + 600 * Math.sin(windowT0 * 0.15);
+    const fFire = (rpmSim / 60) * 2;
     const mags = freqs.map((f) => {
-      const p1 = Math.exp(-((f - 120) ** 2) / 350) * 2.2;
-      const p2 = Math.exp(-((f - 360) ** 2) / 500) * 1.4;
-      const p3 = Math.exp(-((f - 720) ** 2) / 600) * 0.8;
+      const p1 = Math.exp(-((f - fFire) ** 2) / 250) * 2.2;
+      const p2 = Math.exp(-((f - fFire * 2) ** 2) / 350) * 1.4;
+      const p3 = Math.exp(-((f - fFire * 3) ** 2) / 500) * 0.8;
       const p4 = Math.exp(-((f - 2400) ** 2) / 1200) * 0.5;
       return 0.04 + p1 + p2 + p3 + p4;
     });
     return { frequencies: freqs, magnitudes: mags };
-  }, [rawFftData]);
+  }, [rawFftData, windowT0]);
 
   const stftData = useMemo(() => {
     if (rawStftData?.times?.length) return rawStftData;
     const times = Array.from({ length: 8 }, (_, i) => stftT0 + i * 0.5);
     const freqs = Array.from({ length: 16 }, (_, i) => i * 250);
-    const power = freqs.map((f) => times.map(() => (f === 1000 || f === 2500 ? 0.7 : 0.08)));
+    const rpmSim = 2500 + 600 * Math.sin(windowT0 * 0.15);
+    const fFire = (rpmSim / 60) * 2;
+    const power = freqs.map((f) => times.map(() => (Math.abs(f - fFire * 2) < 200 || Math.abs(f - 2500) < 150 ? 0.75 : 0.08)));
     return { times, frequencies: freqs, power };
-  }, [rawStftData, stftT0]);
+  }, [rawStftData, stftT0, windowT0]);
 
   const envData = useMemo(() => {
     if (rawEnvData?.frequencies?.length) return rawEnvData;
     const n = 240;
     const freqs = Array.from({ length: n }, (_, i) => i * 10);
-    const mags = freqs.map((f) => Math.exp(-((f - 240) ** 2) / 600) * 1.1 + 0.05);
+    const rpmSim = 2500 + 600 * Math.sin(windowT0 * 0.15);
+    const fFire = (rpmSim / 60) * 2;
+    const mags = freqs.map((f) => Math.exp(-((f - fFire * 2) ** 2) / 400) * 1.2 + 0.05);
     return { frequencies: freqs, magnitudes: mags };
-  }, [rawEnvData]);
+  }, [rawEnvData, windowT0]);
 
   const orderData = useMemo(() => {
     if (rawOrderData?.orders?.length) return rawOrderData;
@@ -118,7 +120,7 @@ export const SignaturesLab: React.FC = () => {
     const orders = Array.from({ length: n }, (_, i) => (i + 1) * 0.25);
     const mags = orders.map((o) => (o === 1 || o === 2 || o === 4 ? 1.6 : 0.06));
     return { orders, magnitudes: mags };
-  }, [rawOrderData]);
+  }, [rawOrderData, windowT0]);
 
   // Build waveform chart (convert 50ms window slice to relative ms for clear oscilloscope visualization)
   const waveformOpt = useMemo(() => {
@@ -271,28 +273,28 @@ export const SignaturesLab: React.FC = () => {
               {windowT0.toFixed(1)}s – {windowT1.toFixed(1)}s (50 ms @ 8 kHz)
             </span>
           </div>
-          <ReactECharts option={waveformOpt} style={{ height: 200 }} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={waveformOpt} style={{ height: 200 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
         </div>
         <div className="card card-screenshot">
           <div className="type-eyebrow ink-subtle mb-xs">FFT Spectrum</div>
-          <ReactECharts option={fftOpt} style={{ height: 200 }} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={fftOpt} style={{ height: 200 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
         </div>
       </div>
 
       <div className="grid-2 mb-lg">
         <div className="card card-screenshot">
           <div className="type-eyebrow ink-subtle mb-xs">STFT Spectrogram</div>
-          <ReactECharts option={stftOpt} style={{ height: 250 }} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={stftOpt} style={{ height: 250 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
         </div>
         <div className="card card-screenshot">
           <div className="type-eyebrow ink-subtle mb-xs">Envelope Spectrum</div>
-          <ReactECharts option={envOpt} style={{ height: 250 }} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={envOpt} style={{ height: 250 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
         </div>
       </div>
 
       <div className="card card-screenshot mb-lg">
         <div className="type-eyebrow ink-subtle mb-xs">Order Spectrum</div>
-        <ReactECharts option={orderOpt} style={{ height: 200 }} opts={{ renderer: 'canvas' }} />
+        <ReactECharts option={orderOpt} style={{ height: 200 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
       </div>
 
       <div className="card mb-md flex justify-between items-center" style={{ padding: 'var(--space-sm) var(--space-md)' }}>

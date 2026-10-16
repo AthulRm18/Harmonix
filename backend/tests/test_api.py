@@ -81,3 +81,27 @@ def test_sensor_intelligence_correlations_and_extremes_endpoint():
         assert "sensors" in ext_data
         assert "arbiter" in ext_data
         assert "verdict" in ext_data["arbiter"]
+
+        # test dynamic signatures
+        fft_res = client.get(f"/signatures/{run_id}/fft?t0=10.0&t1=11.0")
+        assert fft_res.status_code == 200
+        assert "frequencies" in fft_res.json()
+        assert "magnitudes" in fft_res.json()
+
+        stft_res = client.get(f"/signatures/{run_id}/stft?t0=10.0&t1=12.0")
+        assert stft_res.status_code == 200
+        assert "power" in stft_res.json()
+
+        env_res = client.get(f"/signatures/{run_id}/envelope?t0=10.0&t1=11.0")
+        assert env_res.status_code == 200
+        assert "frequencies" in env_res.json()
+        assert "magnitudes" in env_res.json()
+
+        order_res = client.get(f"/signatures/{run_id}/order?t0=10.0&t1=11.0")
+        assert order_res.status_code == 200
+        assert "orders" in order_res.json()
+
+        wave_res = client.get(f"/signatures/{run_id}/waveform?t0=10.0&t1=11.0")
+        assert wave_res.status_code == 200
+        assert "values" in wave_res.json()
+

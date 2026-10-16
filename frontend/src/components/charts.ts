@@ -248,23 +248,17 @@ export function lineChartOption(
     },
   ];
 
-  // Live probe point
+  // Live probe point (clean solid technical marker, no ripple slop)
   if (stream.latestPoint && opts.currentTime !== undefined && (opts.realtime ?? true)) {
     seriesList.push({
       name: `${label} (Live)`,
-      type: 'effectScatter' as const,
+      type: 'scatter' as const,
       data: [stream.latestPoint],
       symbolSize: 6,
-      showEffectOn: 'render' as const,
-      rippleEffect: {
-        brushType: 'stroke' as const,
-        scale: 2.5,
-        period: 2,
-      },
       itemStyle: {
         color,
-        shadowBlur: 6,
-        shadowColor: color,
+        borderColor: THEME.canvas,
+        borderWidth: 1.5,
       },
       silent: true,
       tooltip: { show: false },
@@ -576,27 +570,21 @@ export function multiLineOption(
     lineStyle: { color: p.color, width: 1.5 },
   }));
 
-  // Add live leading edge ripple points for each sensor when in real-time mode
+  // Add live leading edge marker points for each sensor when in real-time mode
   const probeSeries: any[] =
     opts.currentTime !== undefined && (opts.realtime ?? true)
       ? processedSeries
           .filter((p) => p.latestPoint !== null)
           .map((p) => ({
             name: `${p.spec.name} (Live)`,
-            type: 'effectScatter' as const,
+            type: 'scatter' as const,
             yAxisIndex: p.yIndex,
             data: [p.latestPoint!],
             symbolSize: 6,
-            showEffectOn: 'render' as const,
-            rippleEffect: {
-              brushType: 'stroke' as const,
-              scale: 2.5,
-              period: 2,
-            },
             itemStyle: {
               color: p.color,
-              shadowBlur: 6,
-              shadowColor: p.color,
+              borderColor: THEME.canvas,
+              borderWidth: 1.5,
             },
             silent: true,
             tooltip: { show: false },

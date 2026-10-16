@@ -9,10 +9,10 @@ import './ReplayDashboard.css';
 
 // Match exact sensor IDs in backend database
 const SENSOR_CHANNELS = [
-  { id: 'engine_rpm', label: 'Engine RPM', color: THEME.primary },
-  { id: 'coolant_temp', label: 'Coolant °C', color: THEME.success },
-  { id: 'engine_load', label: 'Engine Load %', color: THEME.primaryHover },
-  { id: 'throttle_position', label: 'Throttle %', color: '#f59e0b' },
+  { id: 'engine_rpm', label: 'Engine RPM', unit: 'rpm', color: THEME.primary },
+  { id: 'coolant_temp', label: 'Coolant Temp', unit: '°C', color: THEME.success },
+  { id: 'engine_load', label: 'Engine Load', unit: '%', color: THEME.primaryHover },
+  { id: 'throttle_position', label: 'Throttle Position', unit: '%', color: '#e09b24' },
 ];
 
 export const ReplayDashboard: React.FC = () => {
@@ -170,81 +170,76 @@ export const ReplayDashboard: React.FC = () => {
       {/* Replay Charts */}
       {runId && (
         <>
-          {/* Multi-Sensor View with Dual Y-Axes & Real-Time Stream HUD */}
+          {/* Multi-Sensor View with Dual Y-Axes & Telemetry Readouts */}
           <div className="card card-screenshot mb-md">
-            <div className="flex items-center justify-between mb-xs">
-              <div className="type-eyebrow ink-subtle">Multi-Sensor Telemetry Comparison</div>
-              <span className="type-caption ink-subtle" style={{ fontSize: 11 }}>
-                Dual-Axis: RPM (0–6000) · Scale (% / °C) (0–120)
-              </span>
-            </div>
-
-            {/* Live Streaming HUD Bar */}
-            <div className="telemetry-live-bar">
-              <div className="flex items-center gap-sm">
-                <span className={`live-badge ${isPlaying ? 'streaming' : 'paused'}`}>
-                  <span className="live-dot" />
-                  {isPlaying ? 'Live Streaming' : 'Paused'}
-                </span>
-                <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
-                  T = {currentTime.toFixed(1)}s / {(duration || 300).toFixed(0)}s
-                </span>
+            <div className="flex items-center justify-between mb-sm" style={{ flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
+              <div>
+                <div className="type-eyebrow ink-subtle">Multi-Sensor Telemetry Comparison</div>
+                <div className="type-caption ink-subtle" style={{ fontSize: 11, marginTop: 2 }}>
+                  Dual-Axis: RPM (0–6000) · Scale (% / °C) (0–120)
+                </div>
               </div>
 
-              {/* Instantaneous Sensor Value Readouts */}
-              <div className="flex items-center gap-xs flex-wrap">
-                {SENSOR_CHANNELS.map((ch) => {
-                  const val = liveReadings[ch.id];
-                  return (
-                    <div key={ch.id} className="readout-pill">
-                      <span className="label" style={{ color: ch.color }}>{ch.label.split(' ')[0]}:</span>
-                      <strong>
-                        {val !== undefined
-                          ? ch.id === 'engine_rpm'
-                            ? `${Math.round(val).toLocaleString()} rpm`
-                            : ch.id === 'coolant_temp'
-                              ? `${val.toFixed(1)} °C`
-                              : `${val.toFixed(1)}%`
-                          : '—'}
-                      </strong>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* View Mode Toggle */}
-              <div className="flex items-center gap-xxs">
+              {/* View Mode Toggle - Strict Linear Pill Segmented Control */}
+              <div className="linear-tab-group">
                 <button
                   type="button"
-                  className={`viewmode-btn ${viewMode === 'full' ? 'active' : ''}`}
+                  className={`linear-tab-btn ${viewMode === 'full' ? 'active' : ''}`}
                   onClick={() => setViewMode('full')}
-                  title="Full timeline runway from 0s to duration"
                 >
                   Full Runway
                 </button>
                 <button
                   type="button"
-                  className={`viewmode-btn ${viewMode === 'rolling' ? 'active' : ''}`}
+                  className={`linear-tab-btn ${viewMode === 'rolling' ? 'active' : ''}`}
                   onClick={() => setViewMode('rolling')}
-                  title="Rolling 30-second strip chart window"
                 >
                   Strip-Chart (30s)
                 </button>
               </div>
             </div>
 
+            {/* High-Clarity Telemetry Sensor Readout Strip */}
+            <div className="telemetry-readout-strip mb-sm">
+              {SENSOR_CHANNELS.map((ch) => {
+                const val = liveReadings[ch.id];
+                return (
+                  <div key={ch.id} className="telemetry-readout-item">
+                    <div className="telemetry-readout-header">
+                      <span className="telemetry-readout-dot" style={{ backgroundColor: ch.color }} />
+                      <span className="telemetry-readout-label">{ch.label}</span>
+                    </div>
+                    <div className="telemetry-readout-value font-mono">
+                      {val !== undefined ? (
+                        <>
+                          <span className="num">
+                            {ch.id === 'engine_rpm'
+                              ? Math.round(val).toLocaleString()
+                              : val.toFixed(1)}
+                          </span>
+                          <span className="unit"> {ch.unit}</span>
+                        </>
+                      ) : (
+                        <span className="num">—</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
             {signalsLoading && !signalData ? (
-              <div className="skeleton" style={{ height: 280 }} />
+              <div className="skeleton" style={{ height: 320 }} />
             ) : sensorChartOpt ? (
               <ReactECharts
                 option={sensorChartOpt}
-                style={{ height: 280 }}
+                style={{ height: 320 }}
                 notMerge={true}
                 lazyUpdate={false}
                 opts={{ renderer: 'canvas' }}
               />
             ) : (
-              <div className="empty-state" style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="empty-state" style={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <p className="ink-muted">No signal data available for this run</p>
               </div>
             )}
@@ -252,29 +247,36 @@ export const ReplayDashboard: React.FC = () => {
 
           {/* Individual Sensor Panels */}
           <div className="grid-2 mb-md">
-            {individualCharts.map((opt: any, idx: number) => (
-              <div key={SENSOR_CHANNELS[idx]?.id || idx} className="card card-screenshot">
-                <div className="flex items-center justify-between mb-xs">
-                  <div className="type-eyebrow ink-subtle">{SENSOR_CHANNELS[idx]?.label}</div>
-                  {liveReadings[SENSOR_CHANNELS[idx]?.id] !== undefined && (
-                    <span className="font-mono" style={{ fontSize: 12, color: SENSOR_CHANNELS[idx]?.color, fontWeight: 600 }}>
-                      {SENSOR_CHANNELS[idx]?.id === 'engine_rpm'
-                        ? `${Math.round(liveReadings[SENSOR_CHANNELS[idx]?.id]).toLocaleString()} rpm`
-                        : SENSOR_CHANNELS[idx]?.id === 'coolant_temp'
-                          ? `${liveReadings[SENSOR_CHANNELS[idx]?.id].toFixed(1)} °C`
-                          : `${liveReadings[SENSOR_CHANNELS[idx]?.id].toFixed(1)}%`}
-                    </span>
-                  )}
+            {individualCharts.map((opt: any, idx: number) => {
+              const ch = SENSOR_CHANNELS[idx];
+              const val = liveReadings[ch?.id];
+              return (
+                <div key={ch?.id || idx} className="card card-screenshot">
+                  <div className="flex items-center justify-between mb-xs">
+                    <div className="flex items-center gap-xs">
+                      <span className="telemetry-readout-dot" style={{ backgroundColor: ch?.color }} />
+                      <span className="type-eyebrow ink-subtle">{ch?.label}</span>
+                    </div>
+                    {val !== undefined && (
+                      <span className="font-mono" style={{ fontSize: 14, color: 'var(--color-ink)', fontWeight: 600 }}>
+                        {ch?.id === 'engine_rpm'
+                          ? `${Math.round(val).toLocaleString()} rpm`
+                          : ch?.id === 'coolant_temp'
+                            ? `${val.toFixed(1)} °C`
+                            : `${val.toFixed(1)}%`}
+                      </span>
+                    )}
+                  </div>
+                  <ReactECharts
+                    option={opt}
+                    style={{ height: 190 }}
+                    notMerge={true}
+                    lazyUpdate={false}
+                    opts={{ renderer: 'canvas' }}
+                  />
                 </div>
-                <ReactECharts
-                  option={opt}
-                  style={{ height: 180 }}
-                  notMerge={true}
-                  lazyUpdate={false}
-                  opts={{ renderer: 'canvas' }}
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Status Cards */}

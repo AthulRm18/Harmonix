@@ -285,19 +285,13 @@ export const Prognosis: React.FC = () => {
           ? [
               {
                 name: 'Health Index (Live)',
-                type: 'effectScatter' as const,
+                type: 'scatter' as const,
                 data: [hiStream.latestPoint],
-                symbolSize: 8,
-                showEffectOn: 'render' as const,
-                rippleEffect: {
-                  brushType: 'stroke' as const,
-                  scale: 3,
-                  period: 2,
-                },
+                symbolSize: 6,
                 itemStyle: {
                   color: hiColor,
-                  shadowBlur: 8,
-                  shadowColor: hiColor,
+                  borderColor: THEME.canvas,
+                  borderWidth: 1.5,
                 },
                 silent: true,
                 tooltip: { show: false },
@@ -418,19 +412,13 @@ export const Prognosis: React.FC = () => {
           ? [
               {
                 name: 'RUL (Live)',
-                type: 'effectScatter' as const,
+                type: 'scatter' as const,
                 data: [rulStream.mean.latestPoint],
-                symbolSize: 7,
-                showEffectOn: 'render' as const,
-                rippleEffect: {
-                  brushType: 'stroke' as const,
-                  scale: 2.5,
-                  period: 2,
-                },
+                symbolSize: 6,
                 itemStyle: {
                   color: THEME.primaryHover,
-                  shadowBlur: 8,
-                  shadowColor: THEME.primary,
+                  borderColor: THEME.canvas,
+                  borderWidth: 1.5,
                 },
                 silent: true,
                 tooltip: { show: false },
@@ -519,66 +507,35 @@ export const Prognosis: React.FC = () => {
         prediction horizon.
       </HelpPanel>
 
-      {/* Live Streaming Telemetry HUD Bar */}
-      <div className="telemetry-live-bar mb-md">
-        <div className="flex items-center gap-sm">
-          <span className={`live-badge ${isPlaying ? 'streaming' : 'paused'}`}>
-            <span className="live-dot" />
-            {isPlaying ? 'Live Streaming' : 'Paused'}
-          </span>
-          <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
-            T = {currentTime.toFixed(1)}s / {(duration || 300).toFixed(0)}s
-          </span>
-        </div>
-
-        {/* Instantaneous Prognosis Readouts */}
-        <div className="flex items-center gap-xs flex-wrap">
-          <div className="readout-pill">
-            <span className="label" style={{ color: hiColor }}>Health Index:</span>
-            <strong>{(currentHI * 100).toFixed(1)}%</strong>
-          </div>
-          <div className="readout-pill">
-            <span className="label" style={{ color: rulColor }}>RUL:</span>
-            <strong>{isRulStable ? '> 1,500h' : `${Math.round(currentRUL)}h`}</strong>
-          </div>
-          <div className="readout-pill">
-            <span className="label" style={{ color: pFailColor }}>P(Failure):</span>
-            <strong>{(pFail * 100).toFixed(1)}%</strong>
-          </div>
-        </div>
-
-        {/* View Mode Toggle */}
-        <div className="flex items-center gap-xxs">
-          <button
-            type="button"
-            className={`viewmode-btn ${viewMode === 'full' ? 'active' : ''}`}
-            onClick={() => setViewMode('full')}
-            title="Full timeline runway from 0s to duration"
-          >
-            Full Runway
-          </button>
-          <button
-            type="button"
-            className={`viewmode-btn ${viewMode === 'rolling' ? 'active' : ''}`}
-            onClick={() => setViewMode('rolling')}
-            title="Rolling 30-second strip chart window"
-          >
-            Strip-Chart (30s)
-          </button>
-        </div>
-      </div>
-
       {/* Health Index Chart */}
       <div className="card card-screenshot mb-lg">
-        <div className="flex items-center justify-between mb-xs">
-          <div className="type-eyebrow ink-subtle">Health Index Over Time</div>
-          <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
-            {viewMode === 'rolling' ? 'Window: 30s' : `Runway: 0s – ${(duration || 300).toFixed(0)}s`}
-          </span>
+        <div className="flex items-center justify-between mb-sm" style={{ flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
+          <div>
+            <div className="type-eyebrow ink-subtle">Health Index Over Time</div>
+            <div className="type-caption ink-subtle" style={{ fontSize: 11, marginTop: 2 }}>
+              Asset degradation curve with critical failure threshold (0.50)
+            </div>
+          </div>
+          <div className="linear-tab-group">
+            <button
+              type="button"
+              className={`linear-tab-btn ${viewMode === 'full' ? 'active' : ''}`}
+              onClick={() => setViewMode('full')}
+            >
+              Full Runway
+            </button>
+            <button
+              type="button"
+              className={`linear-tab-btn ${viewMode === 'rolling' ? 'active' : ''}`}
+              onClick={() => setViewMode('rolling')}
+            >
+              Strip-Chart (30s)
+            </button>
+          </div>
         </div>
         <ReactECharts
           option={hiChartOpt}
-          style={{ height: 250 }}
+          style={{ height: 280 }}
           opts={{ renderer: 'canvas' }}
           notMerge={true}
           lazyUpdate={false}
@@ -785,15 +742,20 @@ export const Prognosis: React.FC = () => {
 
       {/* RUL Fan Chart */}
       <div className="card card-screenshot mb-lg">
-        <div className="flex items-center justify-between mb-xs">
-          <div className="type-eyebrow ink-subtle">RUL Prediction with Confidence Fan</div>
+        <div className="flex items-center justify-between mb-sm" style={{ flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
+          <div>
+            <div className="type-eyebrow ink-subtle">RUL Prediction with Confidence Fan</div>
+            <div className="type-caption ink-subtle" style={{ fontSize: 11, marginTop: 2 }}>
+              Mean remaining useful life with 95% confidence interval
+            </div>
+          </div>
           <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
             {viewMode === 'rolling' ? 'Window: 30s' : `Runway: 0s – ${(duration || 300).toFixed(0)}s`}
           </span>
         </div>
         <ReactECharts
           option={rulChartOpt}
-          style={{ height: 250 }}
+          style={{ height: 280 }}
           opts={{ renderer: 'canvas' }}
           notMerge={true}
           lazyUpdate={false}

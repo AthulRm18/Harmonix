@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.sim.engine import EngineParams, OperatingPoint, generate_high_rate, generate_telemetry
+from app.sim.engine import OperatingPoint, generate_high_rate, generate_telemetry
 from app.sim.faults import FaultConfig, inject_fault
 from app.sim.scenarios import SCENARIOS, get_scenario_by_name
 

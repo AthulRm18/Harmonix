@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -24,6 +26,10 @@ def _build_engine():
     connect_args = {}
     if url.startswith("sqlite"):
         connect_args = {"check_same_thread": False}
+        if ":///" in url:
+            db_file = url.split(":///", 1)[1]
+            if db_file and db_file != ":memory:":
+                Path(db_file).parent.mkdir(parents=True, exist_ok=True)
     return create_async_engine(
         url,
         echo=settings.DATABASE_ECHO,

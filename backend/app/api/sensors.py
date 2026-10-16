@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import numpy as np
 
 from app.db import get_db
-from app.db.models import SensorReading, Run
+from app.db.models import Run, SensorReading
 from app.sensors import load_registry
 
 router = APIRouter()
@@ -265,24 +265,46 @@ async def get_run_correlations(
 
     # Expected couplings in a healthy combustion engine
     expected_pairs = [
-        ("engine_rpm", "engine_load", 0.70, "RPM and Engine Load should exhibit strong positive coupling during acceleration."),
-        ("throttle_position", "map_kpa", 0.75, "Opening throttle plate should directly raise manifold absolute pressure."),
-        ("engine_load", "maf_gps", 0.70, "Higher engine load demands proportional mass airflow intake."),
-        ("coolant_temp", "oil_temp", 0.60, "Engine coolant and sump oil temperature should follow a shared thermal warm-up gradient."),
+        (
+            "engine_rpm",
+            "engine_load",
+            0.70,
+            "RPM and Engine Load should exhibit strong positive coupling during acceleration.",
+        ),
+        (
+            "throttle_position",
+            "map_kpa",
+            0.75,
+            "Opening throttle plate should directly raise manifold absolute pressure.",
+        ),
+        (
+            "engine_load",
+            "maf_gps",
+            0.70,
+            "Higher engine load demands proportional mass airflow intake.",
+        ),
+        (
+            "coolant_temp",
+            "oil_temp",
+            0.60,
+            "Engine coolant and sump oil temperature should follow a shared thermal warm-up gradient.",
+        ),
     ]
 
     for s1, s2, min_expected_r, reason in expected_pairs:
         if s1 in idx_map and s2 in idx_map:
             observed_r = float(corr_matrix[idx_map[s1], idx_map[s2]])
             if observed_r < min_expected_r * 0.5:
-                decoupled_alerts.append({
-                    "sensor_a": s1,
-                    "sensor_b": s2,
-                    "observed_correlation": round(observed_r, 2),
-                    "expected_min_correlation": min_expected_r,
-                    "severity": "CRITICAL" if observed_r < 0 else "WARNING",
-                    "explanation": f"Decoupling Detected ({s1} ⟷ {s2}): observed r = {observed_r:.2f} vs expected > {min_expected_r:.2f}. {reason}",
-                })
+                decoupled_alerts.append(
+                    {
+                        "sensor_a": s1,
+                        "sensor_b": s2,
+                        "observed_correlation": round(observed_r, 2),
+                        "expected_min_correlation": min_expected_r,
+                        "severity": "CRITICAL" if observed_r < 0 else "WARNING",
+                        "explanation": f"Decoupling Detected ({s1} ⟷ {s2}): observed r = {observed_r:.2f} vs expected > {min_expected_r:.2f}. {reason}",
+                    }
+                )
 
     # Prepare labels
     registry = load_registry()
@@ -367,21 +389,23 @@ async def get_run_extremes(
             downsampled_ts = [round(float(t), 2) for t in ts_arr]
             downsampled_vals = [round(float(v), 2) for v in vals]
 
-        sensor_summaries.append({
-            "sensor_id": sid,
-            "name": reg_s.name if reg_s else sid,
-            "unit": reg_s.unit if reg_s else "",
-            "category": reg_s.category if reg_s else "telemetry",
-            "current_value": round(current_val, 2),
-            "normal_range": [normal_min, normal_max],
-            "min_recorded": round(float(vals.min()), 2),
-            "max_recorded": round(float(vals.max()), 2),
-            "status": status,
-            "status_color": status_color,
-            "physical_note": physical_note,
-            "timestamps": downsampled_ts,
-            "values": downsampled_vals,
-        })
+        sensor_summaries.append(
+            {
+                "sensor_id": sid,
+                "name": reg_s.name if reg_s else sid,
+                "unit": reg_s.unit if reg_s else "",
+                "category": reg_s.category if reg_s else "telemetry",
+                "current_value": round(current_val, 2),
+                "normal_range": [normal_min, normal_max],
+                "min_recorded": round(float(vals.min()), 2),
+                "max_recorded": round(float(vals.max()), 2),
+                "status": status,
+                "status_color": status_color,
+                "physical_note": physical_note,
+                "timestamps": downsampled_ts,
+                "values": downsampled_vals,
+            }
+        )
 
     # ── Sensor vs Engine Fault Arbiter Logic ─────────────────────────────────
     curr_dict = {s["sensor_id"]: s["current_value"] for s in sensor_summaries}

@@ -76,4 +76,3 @@ def test_signatures_fft_stft():
 
     env_res = compute_envelope(signal, sr)
     assert len(env_res["frequencies"]) > 0
-

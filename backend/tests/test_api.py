@@ -1,7 +1,6 @@
 """Integration tests for FastAPI endpoints."""
 
 from fastapi.testclient import TestClient
-import pytest
 
 from app.main import app
 
@@ -14,7 +13,6 @@ def test_health_endpoint():
     data = response.json()
     assert data["status"] in ("healthy", "ok")
     assert "version" in data
-
 
 
 def test_sensors_endpoint():
@@ -83,5 +81,3 @@ def test_sensor_intelligence_correlations_and_extremes_endpoint():
         assert "sensors" in ext_data
         assert "arbiter" in ext_data
         assert "verdict" in ext_data["arbiter"]
-
-

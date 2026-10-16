@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.data.seed import main, seed_all
+from app.data.seed import main
 
 if __name__ == "__main__":
     main()

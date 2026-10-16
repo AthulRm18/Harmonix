@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 import numpy as np
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,6 @@ from app.sim.faults import FaultConfig, inject_fault
 log = logging.getLogger(__name__)
 
 router = APIRouter()
-
 
 
 # ── Schemas ───────────────────────────────────────────────────────────
@@ -48,7 +47,6 @@ class RunResponse(BaseModel):
     created_at: str | None
 
     model_config = {"from_attributes": True}
-
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
@@ -255,7 +253,9 @@ async def _execute_simulation_job(
             )
 
             for i, (w, _, t_start) in enumerate(window_records):
-                active_fault = next((f.fault_type for f in faults if t_start >= f.onset_s), "normal")
+                active_fault = next(
+                    (f.fault_type for f in faults if t_start >= f.onset_s), "normal"
+                )
                 probs = {
                     "normal": 0.05,
                     "knock": 0.05,
@@ -338,7 +338,6 @@ async def simulate_run(
     return {"id": run.id, "status": run.status}
 
 
-
 @router.get("/{run_id}/signals")
 async def get_signals(
     run_id: str,
@@ -417,7 +416,6 @@ async def get_predictions(
             for w, p, m in rows
         ],
     }
-
 
 
 @router.get("/{run_id}/events")

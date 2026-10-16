@@ -11,6 +11,7 @@ export const SignaturesLab: React.FC = () => {
   const effectiveRunId = runId || 'demo';
 
   const [showHealthy, setShowHealthy] = useState(false);
+  const [timebaseMode, setTimebaseMode] = useState<'50ms' | '200ms' | '500ms' | 'triggered'>('200ms');
 
   // Synchronized 1-second engine analysis window matching the UI scrubber window
   const windowStep = Math.max(0, Math.floor(currentTime));
@@ -73,11 +74,22 @@ export const SignaturesLab: React.FC = () => {
     enabled: !!runId,
   });
 
-  // Real-time oscilloscope window: 50ms window that flows continuously with currentTime
+  // Real-time oscilloscope window: flows continuously with currentTime or locks via trigger
   const waveformData = useMemo(() => {
-    const windowDuration = 0.05; // 50 ms window
-    const sliceStart = currentTime;
-    const sliceEnd = currentTime + windowDuration;
+    let windowDuration = 0.20; // 200ms default for natural, readable rolling sweep
+    if (timebaseMode === '50ms') windowDuration = 0.05;
+    else if (timebaseMode === '500ms') windowDuration = 0.50;
+    else if (timebaseMode === 'triggered') windowDuration = 0.05;
+
+    // Triggered mode locks slice start to the engine combustion period so the wave stays stabilized on screen
+    let sliceStart = currentTime;
+    if (timebaseMode === 'triggered') {
+      const rpmVal = rawWaveformData?.rpm ?? 3000;
+      const fFire = Math.max(20, (rpmVal / 60) * 2);
+      const period = 1.0 / fFire;
+      sliceStart = Math.floor(currentTime / period) * period;
+    }
+    const sliceEnd = sliceStart + windowDuration;
 
     if (rawWaveformData?.timestamps?.length && rawWaveformData?.values?.length) {
       const ts = rawWaveformData.timestamps;
@@ -85,7 +97,7 @@ export const SignaturesLab: React.FC = () => {
       const tMin = ts[0];
       const tMax = ts[ts.length - 1];
 
-      // If currentTime is within the loaded buffer
+      // If sliceStart is within the loaded buffer
       if (sliceStart >= tMin && sliceStart < tMax) {
         const slicedTs: number[] = [];
         const slicedVs: number[] = [];
@@ -96,13 +108,13 @@ export const SignaturesLab: React.FC = () => {
           }
         }
         if (slicedTs.length >= 20) {
-          return { timestamps: slicedTs, values: slicedVs, sliceStart };
+          return { timestamps: slicedTs, values: slicedVs, sliceStart, windowDuration };
         }
       }
     }
 
     // High-fidelity flowing fallback driven directly by continuous currentTime
-    const n = 160;
+    const n = Math.round(windowDuration * 3200);
     const ts: number[] = [];
     const vs: number[] = [];
     const rpmSim = 2500 + 600 * Math.sin(currentTime * 0.15);
@@ -117,8 +129,8 @@ export const SignaturesLab: React.FC = () => {
         0.05 * Math.sin(tAbs * 12345.6);
       vs.push(v);
     }
-    return { timestamps: ts, values: vs, sliceStart };
-  }, [rawWaveformData, currentTime]);
+    return { timestamps: ts, values: vs, sliceStart, windowDuration };
+  }, [rawWaveformData, currentTime, timebaseMode]);
 
   // Build waveform chart (convert 50ms window slice to relative ms for clear oscilloscope visualization)
   const waveformOpt = useMemo(() => {
@@ -350,9 +362,37 @@ export const SignaturesLab: React.FC = () => {
       <div className="grid-2 mb-lg">
         <div className="card card-screenshot">
           <div className="flex items-center justify-between mb-xs">
-            <div className="type-eyebrow ink-subtle">Time-Domain Waveform</div>
+            <div className="flex items-center gap-sm">
+              <div className="type-eyebrow ink-subtle">Time-Domain Waveform</div>
+              <div className="flex gap-xs" style={{ background: 'var(--surface-3)', padding: 2, borderRadius: 4 }}>
+                {(['200ms', '500ms', 'triggered', '50ms'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    className="btn"
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: 10,
+                      height: 'auto',
+                      background: timebaseMode === mode ? 'var(--primary)' : 'transparent',
+                      color: timebaseMode === mode ? '#fff' : 'var(--ink-subtle)',
+                      border: 'none',
+                    }}
+                    onClick={() => setTimebaseMode(mode)}
+                    title={
+                      mode === 'triggered'
+                        ? 'Stabilizes waveform by triggering on engine combustion cycle'
+                        : `Display ${mode} rolling window`
+                    }
+                  >
+                    {mode === 'triggered' ? '⚡ Triggered' : mode}
+                  </button>
+                ))}
+              </div>
+            </div>
             <span className="type-caption ink-subtle" style={{ fontSize: 11 }}>
-              {currentTime.toFixed(2)}s – {(currentTime + 0.05).toFixed(2)}s (50 ms live oscilloscope)
+              {timebaseMode === 'triggered'
+                ? '50 ms (Crank-Triggered Stabilized)'
+                : `${((waveformData?.windowDuration ?? 0.2) * 1000).toFixed(0)} ms (${currentTime.toFixed(2)}s – ${(currentTime + (waveformData?.windowDuration ?? 0.2)).toFixed(2)}s)`}
             </span>
           </div>
           <ReactECharts option={waveformOpt} style={{ height: 200 }} notMerge={false} lazyUpdate={true} opts={{ renderer: 'canvas' }} />

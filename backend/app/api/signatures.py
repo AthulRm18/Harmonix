@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.db.models import SensorReading, AnomalyEvent
+from app.db.models import AnomalyEvent, SensorReading
 from app.pipeline.signatures import (
     compute_envelope,
     compute_fft,
@@ -118,14 +118,18 @@ async def _fetch_signal(
     # Fault-specific acoustic injection
     if fault_type == "knock":
         knock_amp = 0.85 * severity
-        sig += knock_amp * np.sin(2 * np.pi * 6500 * t) * (1.0 + 0.5 * np.sin(2 * np.pi * f_fire * t))
+        sig += (
+            knock_amp * np.sin(2 * np.pi * 6500 * t) * (1.0 + 0.5 * np.sin(2 * np.pi * f_fire * t))
+        )
     elif fault_type == "misfire":
-        sig *= (1.0 - 0.35 * severity)
+        sig *= 1.0 - 0.35 * severity
         sig += (1.4 * severity) * np.sin(2 * np.pi * (f_crank * 0.5) * t)
     elif fault_type == "valve_wear":
-        sig += (0.45 * severity) * np.sin(2 * np.pi * 1800 * t) + (0.35 * severity) * np.sin(2 * np.pi * 3600 * t)
+        sig += (0.45 * severity) * np.sin(2 * np.pi * 1800 * t) + (0.35 * severity) * np.sin(
+            2 * np.pi * 3600 * t
+        )
     elif fault_type == "coil_degradation":
-        sig *= (1.0 + 0.25 * severity * np.sin(2 * np.pi * (f_crank * 0.25) * t))
+        sig *= 1.0 + 0.25 * severity * np.sin(2 * np.pi * (f_crank * 0.25) * t)
 
     # Add realistic broadband engine noise
     sig += 0.22 * rng.normal(0, 1, n_samples)

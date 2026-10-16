@@ -104,4 +104,3 @@ def test_sensor_intelligence_correlations_and_extremes_endpoint():
         wave_res = client.get(f"/signatures/{run_id}/waveform?t0=10.0&t1=11.0")
         assert wave_res.status_code == 200
         assert "values" in wave_res.json()
-

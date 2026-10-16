@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchPrognosis, fetchPredictions, fetchRun } from '../api/client';
 import { useReplayStore } from '../state/replayStore';
 import { HelpPanel } from '../components/HelpPanel';
-import { baseOption, gaugeOption, THEME } from '../components/charts';
+import { baseOption, gaugeOption, sliceStreamData, THEME } from '../components/charts';
 
 // Economic profile mapping for realistic fleet cost avoidance
 interface EconomicProfile {
@@ -91,7 +91,8 @@ function demoPrognosisData(nPoints = 50) {
 }
 
 export const Prognosis: React.FC = () => {
-  const { runId, currentTime } = useReplayStore();
+  const { runId, currentTime, duration, isPlaying } = useReplayStore();
+  const [viewMode, setViewMode] = React.useState<'full' | 'rolling'>('full');
 
   const { data: runData } = useQuery({
     queryKey: ['run', runId],
@@ -157,205 +158,288 @@ export const Prognosis: React.FC = () => {
   const rulUpper = activePoint?.rul_ci_upper ?? 980;
   const pFail = activePoint?.p_fail_horizon ?? 0.021;
 
-  // Health Index trend chart with live scrubber playhead
-  const hiChartOpt = baseOption({
-    grid: { top: 32, right: 24, bottom: 40, left: 56 },
-    xAxis: {
-      type: 'value',
-      name: 'Time (s)',
-      nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
-      axisLine: { lineStyle: { color: THEME.hairline } },
-      axisTick: { show: false },
-      axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
-    },
-    yAxis: {
-      type: 'value',
-      name: 'Health Index',
-      min: 0,
-      max: 1,
-      nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
-      axisLine: { lineStyle: { color: THEME.hairline } },
-      axisTick: { show: false },
-      axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
-    },
-    visualMap: {
-      show: false,
-      dimension: 1,
-      pieces: [
-        { gt: 0.7, color: THEME.success },
-        { gt: 0.5, lte: 0.7, color: '#e09b24' },
-        { lte: 0.5, color: '#e5534b' },
-      ],
-      outOfRange: { color: '#e5534b' },
-    },
-    series: [
-      {
-        name: 'Health Index',
-        type: 'line',
-        data: progData.map((d: any) => [d.t, d.health_index]),
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { width: 2.5 },
-        areaStyle: {
-          color: {
-            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(94, 106, 210, 0.22)' },
-              { offset: 1, color: 'rgba(94, 106, 210, 0.02)' },
-            ],
-          },
-        },
-        markLine: {
-          symbol: ['none', 'none'],
-          silent: true,
-          data: [
-            {
-              yAxis: 0.5,
-              lineStyle: { color: '#e5534b', type: 'dashed', width: 1.5 },
-              label: {
-                formatter: 'Critical Failure Limit (0.50)',
-                color: '#e5534b',
-                fontSize: 10,
-                fontWeight: 500,
-                position: 'insideEndTop',
-              },
-            },
-            {
-              xAxis: currentTime,
-              lineStyle: { color: THEME.primaryHover, type: 'solid', width: 2 },
-              label: {
-                formatter: `Playhead: ${currentTime.toFixed(1)}s (HI: ${currentHI.toFixed(2)})`,
-                color: THEME.ink,
-                fontSize: 10,
-                fontWeight: 600,
-              },
-            },
-          ],
-        },
-        markArea: {
-          silent: true,
-          data: [
-            [
-              {
-                yAxis: 0,
-                itemStyle: { color: 'rgba(229, 83, 75, 0.05)' },
-                label: {
-                  show: true,
-                  position: ['16', '75%'],
-                  formatter: 'CRITICAL FAILURE ZONE (< 0.50)',
-                  color: 'rgba(229, 83, 75, 0.40)',
-                  fontSize: 10,
-                  fontWeight: 600,
-                },
-              },
-              { yAxis: 0.5 },
-            ],
-          ],
-        },
-      },
-    ],
-  });
-
-  // RUL fan chart with live scrubber playhead
-  const rulChartOpt = baseOption({
-    grid: { top: 32, right: 24, bottom: 40, left: 56 },
-    tooltip: {
-      trigger: 'axis',
-      formatter: (params: any) => {
-        const arr = Array.isArray(params) ? params : [params];
-        if (!arr || arr.length === 0) return '';
-        const t = arr[0].value[0];
-        const meanParam = arr.find((p: any) => p.seriesName === 'RUL (mean)');
-        const upperParam = arr.find((p: any) => p.seriesName === '95% CI Upper');
-        const lowerParam = arr.find((p: any) => p.seriesName === '95% CI Lower');
-        const rul = meanParam ? meanParam.value[1] : 0;
-        const upper = upperParam ? upperParam.value[1] : 0;
-        const lower = lowerParam ? lowerParam.value[1] : 0;
-        const isStable = rul >= 1500;
-        return `<div style="padding: 4px 6px; font-size: 12px; font-family: ${THEME.fontFamily};">
-          <div style="color: ${THEME.inkSubtle}; margin-bottom: 4px;">Time: <strong>${Number(t).toFixed(1)}s</strong></div>
-          <div style="color: ${THEME.primaryHover}; margin-bottom: 2px;">
-            RUL (mean): <strong>${isStable ? '> 1,500h (Full Life)' : Math.round(rul) + ' operating hours'}</strong>
-          </div>
-          <div style="color: ${THEME.inkMuted};">
-            95% CI: <strong>${isStable ? 'Stable Baseline' : `[${Math.round(lower)}h, ${Math.round(upper)}h]`}</strong>
-          </div>
-        </div>`;
-      },
-    },
-    legend: {
-      show: true,
-      top: 4,
-      textStyle: { color: THEME.inkMuted, fontSize: 11 },
-    },
-    xAxis: {
-      type: 'value',
-      name: 'Time (s)',
-      nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
-      axisLine: { lineStyle: { color: THEME.hairline } },
-      axisTick: { show: false },
-      axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
-    },
-    yAxis: {
-      type: 'value',
-      name: 'RUL (hours)',
-      nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
-      axisLine: { lineStyle: { color: THEME.hairline } },
-      axisTick: { show: false },
-      axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
-    },
-    series: [
-      // Upper CI bound (area)
-      {
-        name: '95% CI Upper',
-        type: 'line',
-        data: progData.map((d: any) => [d.t, d.rul_ci_upper]),
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { opacity: 0 },
-        stack: 'ci',
-        areaStyle: { color: THEME.primary + '20' },
-      },
-      // Lower CI bound
-      {
-        name: '95% CI Lower',
-        type: 'line',
-        data: progData.map((d: any) => [d.t, d.rul_ci_lower]),
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { opacity: 0 },
-        stack: 'ci',
-        areaStyle: { color: 'transparent' },
-      },
-      // Mean RUL
-      {
-        name: 'RUL (mean)',
-        type: 'line',
-        data: progData.map((d: any) => [d.t, d.rul_mean]),
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { color: THEME.primary, width: 2 },
-        markLine: {
-          symbol: ['none', 'none'],
-          silent: true,
-          data: [
-            { xAxis: currentTime, lineStyle: { color: THEME.primaryHover, type: 'solid', width: 2 }, label: { formatter: `${currentTime.toFixed(1)}s`, color: THEME.ink, fontSize: 10 } },
-          ],
-        },
-      },
-    ],
-  });
-
-  // Determine HI color
+  // Determine HI color and status labels
   const hiColor = currentHI >= 0.7 ? THEME.success : currentHI >= 0.4 ? '#f59e0b' : '#e5534b';
   const hiLabel = currentHI >= 0.7 ? 'Good condition' : currentHI >= 0.4 ? 'Degraded' : 'Critical';
   const rulColor = currentRUL >= 500 ? THEME.success : currentRUL >= 200 ? '#f59e0b' : '#e5534b';
   const pFailColor = pFail < 0.1 ? THEME.success : pFail < 0.4 ? '#f59e0b' : '#e5534b';
   const pFailLabel = pFail < 0.1 ? 'Very low risk' : pFail < 0.4 ? 'Moderate risk' : 'High risk';
+
+  // Health Index real-time stream slicing
+  const hiStream = React.useMemo(() => {
+    const ts = progData.map((d: any) => d.t);
+    const vals = progData.map((d: any) => d.health_index);
+    return sliceStreamData(ts, vals, currentTime, {
+      viewMode,
+      duration: duration || 300,
+      rollingWindowS: 30,
+    });
+  }, [progData, currentTime, viewMode, duration]);
+
+  // Health Index trend chart with live scrubber playhead and real-time streaming
+  const hiChartOpt = React.useMemo(() => {
+    return baseOption({
+      grid: { top: 32, right: 24, bottom: 40, left: 56 },
+      xAxis: {
+        type: 'value',
+        name: 'Time (s)',
+        min: hiStream.xMin,
+        max: hiStream.xMax,
+        nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
+        axisLine: { lineStyle: { color: THEME.hairline } },
+        axisTick: { show: false },
+        axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
+        splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'Health Index',
+        min: 0,
+        max: 1,
+        nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
+        axisLine: { lineStyle: { color: THEME.hairline } },
+        axisTick: { show: false },
+        axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
+        splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
+      },
+      visualMap: {
+        show: false,
+        dimension: 1,
+        pieces: [
+          { gt: 0.7, color: THEME.success },
+          { gt: 0.5, lte: 0.7, color: '#e09b24' },
+          { lte: 0.5, color: '#e5534b' },
+        ],
+        outOfRange: { color: '#e5534b' },
+      },
+      series: [
+        {
+          name: 'Health Index',
+          type: 'line',
+          data: hiStream.data,
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { width: 2.5 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(94, 106, 210, 0.22)' },
+                { offset: 1, color: 'rgba(94, 106, 210, 0.02)' },
+              ],
+            },
+          },
+          markLine: {
+            symbol: ['none', 'none'],
+            silent: true,
+            data: [
+              {
+                yAxis: 0.5,
+                lineStyle: { color: '#e5534b', type: 'dashed', width: 1.5 },
+                label: {
+                  formatter: 'Critical Failure Limit (0.50)',
+                  color: '#e5534b',
+                  fontSize: 10,
+                  fontWeight: 500,
+                  position: 'insideEndTop',
+                },
+              },
+              {
+                xAxis: currentTime,
+                lineStyle: { color: THEME.primaryHover, type: 'solid', width: 2 },
+                label: {
+                  formatter: `Playhead: ${currentTime.toFixed(1)}s (HI: ${currentHI.toFixed(2)})`,
+                  color: THEME.ink,
+                  fontSize: 10,
+                  fontWeight: 600,
+                },
+              },
+            ],
+          },
+          markArea: {
+            silent: true,
+            data: [
+              [
+                {
+                  yAxis: 0,
+                  itemStyle: { color: 'rgba(229, 83, 75, 0.05)' },
+                  label: {
+                    show: true,
+                    position: ['16', '75%'],
+                    formatter: 'CRITICAL FAILURE ZONE (< 0.50)',
+                    color: 'rgba(229, 83, 75, 0.40)',
+                    fontSize: 10,
+                    fontWeight: 600,
+                  },
+                },
+                { yAxis: 0.5 },
+              ],
+            ],
+          },
+        },
+        ...(hiStream.latestPoint
+          ? [
+              {
+                name: 'Health Index (Live)',
+                type: 'effectScatter' as const,
+                data: [hiStream.latestPoint],
+                symbolSize: 8,
+                showEffectOn: 'render' as const,
+                rippleEffect: {
+                  brushType: 'stroke' as const,
+                  scale: 3,
+                  period: 2,
+                },
+                itemStyle: {
+                  color: hiColor,
+                  shadowBlur: 8,
+                  shadowColor: hiColor,
+                },
+                silent: true,
+                tooltip: { show: false },
+              },
+            ]
+          : []),
+      ],
+    });
+  }, [hiStream, currentTime, currentHI, hiColor]);
+
+  // RUL real-time stream slicing
+  const rulStream = React.useMemo(() => {
+    const ts = progData.map((d: any) => d.t);
+    const meanVals = progData.map((d: any) => d.rul_mean);
+    const upperVals = progData.map((d: any) => d.rul_ci_upper);
+    const lowerVals = progData.map((d: any) => d.rul_ci_lower);
+
+    return {
+      mean: sliceStreamData(ts, meanVals, currentTime, { viewMode, duration: duration || 300, rollingWindowS: 30 }),
+      upper: sliceStreamData(ts, upperVals, currentTime, { viewMode, duration: duration || 300, rollingWindowS: 30 }),
+      lower: sliceStreamData(ts, lowerVals, currentTime, { viewMode, duration: duration || 300, rollingWindowS: 30 }),
+    };
+  }, [progData, currentTime, viewMode, duration]);
+
+  // RUL fan chart with live scrubber playhead and real-time streaming
+  const rulChartOpt = React.useMemo(() => {
+    return baseOption({
+      grid: { top: 32, right: 24, bottom: 40, left: 56 },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: any) => {
+          const arr = Array.isArray(params) ? params : [params];
+          if (!arr || arr.length === 0) return '';
+          const t = arr[0].value[0];
+          const meanParam = arr.find((p: any) => p.seriesName === 'RUL (mean)');
+          const upperParam = arr.find((p: any) => p.seriesName === '95% CI Upper');
+          const lowerParam = arr.find((p: any) => p.seriesName === '95% CI Lower');
+          const rul = meanParam ? meanParam.value[1] : 0;
+          const upper = upperParam ? upperParam.value[1] : 0;
+          const lower = lowerParam ? lowerParam.value[1] : 0;
+          const isStable = rul >= 1500;
+          return `<div style="padding: 4px 6px; font-size: 12px; font-family: ${THEME.fontFamily};">
+            <div style="color: ${THEME.inkSubtle}; margin-bottom: 4px;">Time: <strong>${Number(t).toFixed(1)}s</strong></div>
+            <div style="color: ${THEME.primaryHover}; margin-bottom: 2px;">
+              RUL (mean): <strong>${isStable ? '> 1,500h (Full Life)' : Math.round(rul) + ' operating hours'}</strong>
+            </div>
+            <div style="color: ${THEME.inkMuted};">
+              95% CI: <strong>${isStable ? 'Stable Baseline' : `[${Math.round(lower)}h, ${Math.round(upper)}h]`}</strong>
+            </div>
+          </div>`;
+        },
+      },
+      legend: {
+        show: true,
+        top: 4,
+        textStyle: { color: THEME.inkMuted, fontSize: 11 },
+      },
+      xAxis: {
+        type: 'value',
+        name: 'Time (s)',
+        min: rulStream.mean.xMin,
+        max: rulStream.mean.xMax,
+        nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
+        axisLine: { lineStyle: { color: THEME.hairline } },
+        axisTick: { show: false },
+        axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
+        splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'RUL (hours)',
+        nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
+        axisLine: { lineStyle: { color: THEME.hairline } },
+        axisTick: { show: false },
+        axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
+        splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
+      },
+      series: [
+        // Upper CI bound (area)
+        {
+          name: '95% CI Upper',
+          type: 'line',
+          data: rulStream.upper.data,
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { opacity: 0 },
+          stack: 'ci',
+          areaStyle: { color: THEME.primary + '20' },
+        },
+        // Lower CI bound
+        {
+          name: '95% CI Lower',
+          type: 'line',
+          data: rulStream.lower.data,
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { opacity: 0 },
+          stack: 'ci',
+          areaStyle: { color: 'transparent' },
+        },
+        // Mean RUL
+        {
+          name: 'RUL (mean)',
+          type: 'line',
+          data: rulStream.mean.data,
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { color: THEME.primary, width: 2 },
+          markLine: {
+            symbol: ['none', 'none'],
+            silent: true,
+            data: [
+              { xAxis: currentTime, lineStyle: { color: THEME.primaryHover, type: 'solid', width: 2 }, label: { formatter: `${currentTime.toFixed(1)}s`, color: THEME.ink, fontSize: 10 } },
+            ],
+          },
+        },
+        ...(rulStream.mean.latestPoint
+          ? [
+              {
+                name: 'RUL (Live)',
+                type: 'effectScatter' as const,
+                data: [rulStream.mean.latestPoint],
+                symbolSize: 7,
+                showEffectOn: 'render' as const,
+                rippleEffect: {
+                  brushType: 'stroke' as const,
+                  scale: 2.5,
+                  period: 2,
+                },
+                itemStyle: {
+                  color: THEME.primaryHover,
+                  shadowBlur: 8,
+                  shadowColor: THEME.primary,
+                },
+                silent: true,
+                tooltip: { show: false },
+              },
+            ]
+          : []),
+      ],
+    });
+  }, [rulStream, currentTime]);
 
   // Component wear data derived dynamically from live health index
   const components = [
@@ -435,10 +519,70 @@ export const Prognosis: React.FC = () => {
         prediction horizon.
       </HelpPanel>
 
+      {/* Live Streaming Telemetry HUD Bar */}
+      <div className="telemetry-live-bar mb-md">
+        <div className="flex items-center gap-sm">
+          <span className={`live-badge ${isPlaying ? 'streaming' : 'paused'}`}>
+            <span className="live-dot" />
+            {isPlaying ? 'Live Streaming' : 'Paused'}
+          </span>
+          <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
+            T = {currentTime.toFixed(1)}s / {(duration || 300).toFixed(0)}s
+          </span>
+        </div>
+
+        {/* Instantaneous Prognosis Readouts */}
+        <div className="flex items-center gap-xs flex-wrap">
+          <div className="readout-pill">
+            <span className="label" style={{ color: hiColor }}>Health Index:</span>
+            <strong>{(currentHI * 100).toFixed(1)}%</strong>
+          </div>
+          <div className="readout-pill">
+            <span className="label" style={{ color: rulColor }}>RUL:</span>
+            <strong>{isRulStable ? '> 1,500h' : `${Math.round(currentRUL)}h`}</strong>
+          </div>
+          <div className="readout-pill">
+            <span className="label" style={{ color: pFailColor }}>P(Failure):</span>
+            <strong>{(pFail * 100).toFixed(1)}%</strong>
+          </div>
+        </div>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center gap-xxs">
+          <button
+            type="button"
+            className={`viewmode-btn ${viewMode === 'full' ? 'active' : ''}`}
+            onClick={() => setViewMode('full')}
+            title="Full timeline runway from 0s to duration"
+          >
+            Full Runway
+          </button>
+          <button
+            type="button"
+            className={`viewmode-btn ${viewMode === 'rolling' ? 'active' : ''}`}
+            onClick={() => setViewMode('rolling')}
+            title="Rolling 30-second strip chart window"
+          >
+            Strip-Chart (30s)
+          </button>
+        </div>
+      </div>
+
       {/* Health Index Chart */}
       <div className="card card-screenshot mb-lg">
-        <div className="type-eyebrow ink-subtle mb-xs">Health Index Over Time</div>
-        <ReactECharts option={hiChartOpt} style={{ height: 250 }} opts={{ renderer: 'canvas' }} />
+        <div className="flex items-center justify-between mb-xs">
+          <div className="type-eyebrow ink-subtle">Health Index Over Time</div>
+          <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
+            {viewMode === 'rolling' ? 'Window: 30s' : `Runway: 0s – ${(duration || 300).toFixed(0)}s`}
+          </span>
+        </div>
+        <ReactECharts
+          option={hiChartOpt}
+          style={{ height: 250 }}
+          opts={{ renderer: 'canvas' }}
+          notMerge={true}
+          lazyUpdate={false}
+        />
       </div>
 
       <div className="grid-3 mb-lg">
@@ -641,8 +785,19 @@ export const Prognosis: React.FC = () => {
 
       {/* RUL Fan Chart */}
       <div className="card card-screenshot mb-lg">
-        <div className="type-eyebrow ink-subtle mb-xs">RUL Prediction with Confidence Fan</div>
-        <ReactECharts option={rulChartOpt} style={{ height: 250 }} opts={{ renderer: 'canvas' }} />
+        <div className="flex items-center justify-between mb-xs">
+          <div className="type-eyebrow ink-subtle">RUL Prediction with Confidence Fan</div>
+          <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
+            {viewMode === 'rolling' ? 'Window: 30s' : `Runway: 0s – ${(duration || 300).toFixed(0)}s`}
+          </span>
+        </div>
+        <ReactECharts
+          option={rulChartOpt}
+          style={{ height: 250 }}
+          opts={{ renderer: 'canvas' }}
+          notMerge={true}
+          lazyUpdate={false}
+        />
       </div>
 
       {/* Component Wear Trends */}

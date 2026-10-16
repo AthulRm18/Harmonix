@@ -42,15 +42,6 @@ async def _fetch_signal(
     result = await db.execute(q)
     rows = result.all()
 
-    if rows:
-        values = np.array([r[1] for r in rows])
-        if len(rows) > 1:
-            dt = rows[1][0] - rows[0][0]
-            sr = int(round(1.0 / dt)) if dt > 0 else 8000
-        else:
-            sr = 8000
-        return values, sr, 3000.0
-
     # 1. Look up actual RPM around t0 for this run
     rpm_q = (
         select(SensorReading.value)
@@ -64,6 +55,15 @@ async def _fetch_signal(
     rpm_val = rpm_res.scalar()
     if rpm_val is None or rpm_val <= 0:
         rpm_val = 2600.0 + 550.0 * np.sin(t0 * 0.12)
+
+    if rows:
+        values = np.array([r[1] for r in rows])
+        if len(rows) > 1:
+            dt = rows[1][0] - rows[0][0]
+            sr = int(round(1.0 / dt)) if dt > 0 else 8000
+        else:
+            sr = 8000
+        return values, sr, float(rpm_val)
 
     # 2. Look up engine load around t0
     load_q = (
@@ -182,12 +182,12 @@ async def get_order_spectrum(
     sensor: str = Query("vibration", description="Sensor ID"),
     t0: float = Query(0.0),
     t1: float = Query(1.0),
-    rpm: float = Query(3000.0, description="Engine RPM for order calculation"),
+    rpm: float | None = Query(None, description="Engine RPM for order calculation"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get order spectrum for a sensor window."""
     data, sr, rpm_val = await _fetch_signal(run_id, sensor, t0, t1, db)
-    effective_rpm = rpm if (rpm != 3000.0 and rpm > 0) else rpm_val
+    effective_rpm = rpm if (rpm is not None and rpm > 0) else rpm_val
     result = compute_order_spectrum(data, sr, effective_rpm)
     return {"sensor": sensor, "sample_rate": sr, "rpm": effective_rpm, **result}
 

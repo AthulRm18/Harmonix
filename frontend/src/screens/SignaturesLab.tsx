@@ -62,7 +62,7 @@ export const SignaturesLab: React.FC = () => {
   // Order spectrum query
   const { data: rawOrderData } = useQuery({
     queryKey: ['order', effectiveRunId, windowT0],
-    queryFn: () => fetchOrderSpectrum(effectiveRunId, 'vibration', windowT0, windowT1, 3000),
+    queryFn: () => fetchOrderSpectrum(effectiveRunId, 'vibration', windowT0, windowT1),
     staleTime: 1000,
     enabled: !!runId,
   });
@@ -115,10 +115,34 @@ export const SignaturesLab: React.FC = () => {
   }, [rawEnvData, windowT0]);
 
   const orderData = useMemo(() => {
-    if (rawOrderData?.orders?.length) return rawOrderData;
+    if (rawOrderData?.orders?.length) {
+      const maxOrder = 30;
+      const filtered: { order: number; mag: number }[] = [];
+      for (let i = 0; i < rawOrderData.orders.length; i++) {
+        const o = rawOrderData.orders[i];
+        if (o <= maxOrder) {
+          filtered.push({ order: Number(o.toFixed(2)), mag: rawOrderData.magnitudes[i] });
+        }
+      }
+      const step = Math.max(1, Math.floor(filtered.length / 240));
+      const sampled = filtered.filter((_, i) => i % step === 0);
+      return {
+        orders: sampled.map((s) => s.order),
+        magnitudes: sampled.map((s) => s.mag),
+      };
+    }
     const n = 120;
-    const orders = Array.from({ length: n }, (_, i) => (i + 1) * 0.25);
-    const mags = orders.map((o) => (o === 1 || o === 2 || o === 4 ? 1.6 : 0.06));
+    const orders = Array.from({ length: n }, (_, i) => Number(((i + 1) * 0.25).toFixed(2)));
+    const loadSim = 0.5 + 0.3 * Math.sin(windowT0 * 0.2);
+    const noise = Math.sin(windowT0 * 13.7) * 0.03;
+    const mags = orders.map((o) => {
+      let m = 0.04 + Math.abs(noise);
+      if (Math.abs(o - 1) < 0.15) m += 0.8 * loadSim + Math.sin(windowT0 * 2) * 0.1;
+      if (Math.abs(o - 2) < 0.15) m += 1.5 * loadSim + Math.cos(windowT0 * 3) * 0.15; // Main firing order
+      if (Math.abs(o - 4) < 0.15) m += 0.9 * loadSim + Math.sin(windowT0 * 5) * 0.08; // 2nd harmonic
+      if (Math.abs(o - 0.5) < 0.15) m += 0.1 + 0.6 * Math.max(0, Math.sin(windowT0 * 0.3));
+      return Number(Math.max(0.01, m).toFixed(3));
+    });
     return { orders, magnitudes: mags };
   }, [rawOrderData, windowT0]);
 
@@ -239,8 +263,8 @@ export const SignaturesLab: React.FC = () => {
   // Build order spectrum chart
   const orderOpt = useMemo(() => {
     const opt = lineChartOption(
-      orderData.orders.slice(0, 300),
-      orderData.magnitudes.slice(0, 300),
+      orderData.orders,
+      orderData.magnitudes,
       'Order Spectrum',
       { color: '#7a7fad', area: true, yAxisName: 'Magnitude' }
     );

@@ -78,8 +78,8 @@ export const fetchSTFT = (runId: string, sensor = 'vibration', t0 = 0, t1 = 2, n
 export const fetchEnvelope = (runId: string, sensor = 'vibration', t0 = 0, t1 = 1) =>
   api.get(`/signatures/${runId}/envelope`, { params: { sensor, t0, t1 } }).then(r => r.data);
 
-export const fetchOrderSpectrum = (runId: string, sensor = 'vibration', t0 = 0, t1 = 1, rpm = 3000) =>
-  api.get(`/signatures/${runId}/order`, { params: { sensor, t0, t1, rpm } }).then(r => r.data);
+export const fetchOrderSpectrum = (runId: string, sensor = 'vibration', t0 = 0, t1 = 1, rpm?: number) =>
+  api.get(`/signatures/${runId}/order`, { params: { sensor, t0, t1, ...(rpm ? { rpm } : {}) } }).then(r => r.data);
 
 export const fetchWaveform = (runId: string, sensor = 'vibration', t0 = 0, t1 = 0.05) =>
   api.get(`/signatures/${runId}/waveform`, { params: { sensor, t0, t1 } }).then(r => r.data);

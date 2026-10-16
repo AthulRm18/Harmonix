@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchRuns, fetchEvents, fetchSignals, fetchPredictions } from '../api/client';
 import { useReplayStore } from '../state/replayStore';
 import { HelpPanel } from '../components/HelpPanel';
-import { lineChartOption, multiLineOption, gaugeOption, THEME } from '../components/charts';
+import { lineChartOption, multiLineOption, gaugeOption, sliceStreamData, THEME } from '../components/charts';
 import './ReplayDashboard.css';
 
 // Match exact sensor IDs in backend database
@@ -21,7 +21,10 @@ export const ReplayDashboard: React.FC = () => {
     setRunId,
     currentTime,
     duration,
+    isPlaying,
   } = useReplayStore();
+
+  const [viewMode, setViewMode] = React.useState<'full' | 'rolling'>('full');
 
   const { data: runsData } = useQuery({
     queryKey: ['runs'],
@@ -90,6 +93,19 @@ export const ReplayDashboard: React.FC = () => {
   const events = eventsData?.events || [];
   const predictions = predictionsData?.predictions || [];
 
+  // Instantaneous live sensor readings at current playhead
+  const liveReadings = React.useMemo(() => {
+    if (!signalData) return {};
+    const map: Record<string, number> = {};
+    signalData.forEach((s: any) => {
+      const res = sliceStreamData(s.timestamps, s.values, currentTime);
+      if (res.latestPoint) {
+        map[s.id] = res.latestPoint[1];
+      }
+    });
+    return map;
+  }, [signalData, currentTime]);
+
   // Get nearest prediction near currentTime
   const currentPred = React.useMemo(() => {
     if (!predictions || predictions.length === 0) return null;
@@ -100,7 +116,7 @@ export const ReplayDashboard: React.FC = () => {
 
   const firstEventOnset = events.length > 0 ? events[0].t_onset : undefined;
 
-  // Build multi-sensor chart with smooth markLine playhead
+  // Build real-time multi-sensor chart (only points up to currentTime plotted)
   const sensorChartOpt = React.useMemo(() => {
     if (!signalData || signalData.length === 0) return null;
     return multiLineOption(
@@ -114,12 +130,16 @@ export const ReplayDashboard: React.FC = () => {
         yAxisName: 'Engine RPM',
         secondaryYAxisName: 'Scale (% / °C)',
         currentTime,
+        duration: duration || 300,
         anomalyOnset: firstEventOnset,
+        realtime: true,
+        viewMode,
+        rollingWindowS: 30,
       }
     );
-  }, [signalData, currentTime, firstEventOnset]);
+  }, [signalData, currentTime, duration, firstEventOnset, viewMode]);
 
-  // Build individual sensor charts with playhead
+  // Build real-time individual sensor charts with playhead and live head
   const individualCharts = React.useMemo(() => {
     if (!signalData) return [];
     return signalData.map((s: any) =>
@@ -128,25 +148,29 @@ export const ReplayDashboard: React.FC = () => {
         area: true,
         yAxisName: s.label,
         currentTime,
+        duration: duration || 300,
+        realtime: true,
+        viewMode,
+        rollingWindowS: 30,
       })
     );
-  }, [signalData, currentTime]);
+  }, [signalData, currentTime, duration, viewMode]);
 
   return (
     <div className="replay-dashboard">
       <div className="page-header">
         <h1>Replay Dashboard</h1>
-        <p className="ink-muted">Synchronised multi-sensor telemetry with dual-axis scaling and anomaly detection</p>
+        <p className="ink-muted">Synchronised real-time multi-sensor telemetry with live stream plotting and anomaly detection</p>
       </div>
 
       <HelpPanel>
-        This screen presents synchronised engine sensor telemetry. Use the persistent telemetry bar at the top of the application to select scenarios, scrub through time, or adjust playback speeds. Anomaly regions (highlighted in red) indicate where model consensus detects active engine faults.
+        This screen presents synchronised engine sensor telemetry plotted dynamically in real time as data arrives from the engine sensors. Use the persistent telemetry bar at the top of the application to select scenarios, scrub through time, or adjust playback speeds. Anomaly regions (highlighted in red) indicate where model consensus detects active engine faults.
       </HelpPanel>
 
       {/* Replay Charts */}
       {runId && (
         <>
-          {/* Multi-Sensor View with Dual Y-Axes */}
+          {/* Multi-Sensor View with Dual Y-Axes & Real-Time Stream HUD */}
           <div className="card card-screenshot mb-md">
             <div className="flex items-center justify-between mb-xs">
               <div className="type-eyebrow ink-subtle">Multi-Sensor Telemetry Comparison</div>
@@ -154,14 +178,69 @@ export const ReplayDashboard: React.FC = () => {
                 Dual-Axis: RPM (0–6000) · Scale (% / °C) (0–120)
               </span>
             </div>
+
+            {/* Live Streaming HUD Bar */}
+            <div className="telemetry-live-bar">
+              <div className="flex items-center gap-sm">
+                <span className={`live-badge ${isPlaying ? 'streaming' : 'paused'}`}>
+                  <span className="live-dot" />
+                  {isPlaying ? 'Live Streaming' : 'Paused'}
+                </span>
+                <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
+                  T = {currentTime.toFixed(1)}s / {(duration || 300).toFixed(0)}s
+                </span>
+              </div>
+
+              {/* Instantaneous Sensor Value Readouts */}
+              <div className="flex items-center gap-xs flex-wrap">
+                {SENSOR_CHANNELS.map((ch) => {
+                  const val = liveReadings[ch.id];
+                  return (
+                    <div key={ch.id} className="readout-pill">
+                      <span className="label" style={{ color: ch.color }}>{ch.label.split(' ')[0]}:</span>
+                      <strong>
+                        {val !== undefined
+                          ? ch.id === 'engine_rpm'
+                            ? `${Math.round(val).toLocaleString()} rpm`
+                            : ch.id === 'coolant_temp'
+                              ? `${val.toFixed(1)} °C`
+                              : `${val.toFixed(1)}%`
+                          : '—'}
+                      </strong>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* View Mode Toggle */}
+              <div className="flex items-center gap-xxs">
+                <button
+                  type="button"
+                  className={`viewmode-btn ${viewMode === 'full' ? 'active' : ''}`}
+                  onClick={() => setViewMode('full')}
+                  title="Full timeline runway from 0s to duration"
+                >
+                  Full Runway
+                </button>
+                <button
+                  type="button"
+                  className={`viewmode-btn ${viewMode === 'rolling' ? 'active' : ''}`}
+                  onClick={() => setViewMode('rolling')}
+                  title="Rolling 30-second strip chart window"
+                >
+                  Strip-Chart (30s)
+                </button>
+              </div>
+            </div>
+
             {signalsLoading && !signalData ? (
               <div className="skeleton" style={{ height: 280 }} />
             ) : sensorChartOpt ? (
               <ReactECharts
                 option={sensorChartOpt}
                 style={{ height: 280 }}
-                notMerge={false}
-                lazyUpdate={true}
+                notMerge={true}
+                lazyUpdate={false}
                 opts={{ renderer: 'canvas' }}
               />
             ) : (
@@ -175,12 +254,23 @@ export const ReplayDashboard: React.FC = () => {
           <div className="grid-2 mb-md">
             {individualCharts.map((opt: any, idx: number) => (
               <div key={SENSOR_CHANNELS[idx]?.id || idx} className="card card-screenshot">
-                <div className="type-eyebrow ink-subtle mb-xs">{SENSOR_CHANNELS[idx]?.label}</div>
+                <div className="flex items-center justify-between mb-xs">
+                  <div className="type-eyebrow ink-subtle">{SENSOR_CHANNELS[idx]?.label}</div>
+                  {liveReadings[SENSOR_CHANNELS[idx]?.id] !== undefined && (
+                    <span className="font-mono" style={{ fontSize: 12, color: SENSOR_CHANNELS[idx]?.color, fontWeight: 600 }}>
+                      {SENSOR_CHANNELS[idx]?.id === 'engine_rpm'
+                        ? `${Math.round(liveReadings[SENSOR_CHANNELS[idx]?.id]).toLocaleString()} rpm`
+                        : SENSOR_CHANNELS[idx]?.id === 'coolant_temp'
+                          ? `${liveReadings[SENSOR_CHANNELS[idx]?.id].toFixed(1)} °C`
+                          : `${liveReadings[SENSOR_CHANNELS[idx]?.id].toFixed(1)}%`}
+                    </span>
+                  )}
+                </div>
                 <ReactECharts
                   option={opt}
                   style={{ height: 180 }}
-                  notMerge={false}
-                  lazyUpdate={true}
+                  notMerge={true}
+                  lazyUpdate={false}
                   opts={{ renderer: 'canvas' }}
                 />
               </div>

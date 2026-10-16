@@ -73,7 +73,107 @@ export function baseOption(overrides: Partial<EChartsOption> = {}): EChartsOptio
   };
 }
 
-/** Line / area chart for time-series signals */
+/** Slices and interpolates timeseries data up to currentTime for realistic real-time streaming */
+export function sliceStreamData(
+  timestamps: number[],
+  values: number[],
+  currentTime?: number,
+  opts: {
+    realtime?: boolean;
+    viewMode?: 'full' | 'rolling';
+    rollingWindowS?: number;
+    duration?: number;
+  } = {},
+): {
+  data: [number, number][];
+  latestPoint: [number, number] | null;
+  xMin?: number;
+  xMax?: number;
+} {
+  if (!timestamps || timestamps.length === 0) {
+    return { data: [], latestPoint: null };
+  }
+
+  const realtime = opts.realtime ?? (currentTime !== undefined);
+  if (!realtime || currentTime === undefined) {
+    return {
+      data: timestamps.map((t, i) => [t, values[i]]),
+      latestPoint: timestamps.length > 0 ? [timestamps[timestamps.length - 1], values[values.length - 1]] : null,
+      xMin: 0,
+      xMax: opts.duration && opts.duration > 0 ? opts.duration : timestamps[timestamps.length - 1],
+    };
+  }
+
+  const effectiveCurrent = Math.max(0, currentTime);
+  const totalDuration = opts.duration && opts.duration > 0 ? opts.duration : Math.max(timestamps[timestamps.length - 1], 10);
+  const viewMode = opts.viewMode || 'full';
+  const rollingWindow = opts.rollingWindowS || 30;
+
+  let xMin = 0;
+  let xMax = totalDuration;
+
+  if (viewMode === 'rolling') {
+    xMin = Math.max(0, effectiveCurrent - rollingWindow);
+    xMax = Math.max(rollingWindow, effectiveCurrent);
+  }
+
+  // Binary search for last index with timestamp <= effectiveCurrent
+  let low = 0;
+  let high = timestamps.length - 1;
+  let lastIdx = -1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (timestamps[mid] <= effectiveCurrent) {
+      lastIdx = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  const data: [number, number][] = [];
+  let latestPoint: [number, number] | null = null;
+
+  if (lastIdx < 0) {
+    // Before first sample
+    if (timestamps.length > 0) {
+      data.push([timestamps[0], values[0]]);
+      latestPoint = [timestamps[0], values[0]];
+    }
+  } else {
+    // Collect points within window
+    const minTimestamp = viewMode === 'rolling' ? xMin : 0;
+    for (let i = 0; i <= lastIdx; i++) {
+      if (timestamps[i] >= minTimestamp) {
+        data.push([timestamps[i], values[i]]);
+      }
+    }
+
+    // Sub-sample linear interpolation for leading edge at exact currentTime
+    if (lastIdx < timestamps.length - 1) {
+      const t1 = timestamps[lastIdx];
+      const t2 = timestamps[lastIdx + 1];
+      const v1 = values[lastIdx];
+      const v2 = values[lastIdx + 1];
+
+      if (t2 > t1 && effectiveCurrent > t1) {
+        const ratio = Math.min(1, Math.max(0, (effectiveCurrent - t1) / (t2 - t1)));
+        const interpVal = v1 + ratio * (v2 - v1);
+        data.push([effectiveCurrent, interpVal]);
+        latestPoint = [effectiveCurrent, interpVal];
+      } else {
+        latestPoint = [t1, v1];
+      }
+    } else {
+      latestPoint = [timestamps[lastIdx], values[lastIdx]];
+    }
+  }
+
+  return { data, latestPoint, xMin, xMax };
+}
+
+/** Line / area chart for time-series signals with real-time stream plotting */
 export function lineChartOption(
   timestamps: number[],
   values: number[],
@@ -88,10 +188,89 @@ export function lineChartOption(
     xAxisMax?: number | string;
     markLine?: number;
     currentTime?: number;
+    duration?: number;
+    realtime?: boolean;
+    viewMode?: 'full' | 'rolling';
+    rollingWindowS?: number;
     tooltipFormatter?: (params: any) => string;
   } = {},
 ): EChartsOption {
   const color = opts.color || THEME.primary;
+  const stream = sliceStreamData(timestamps, values, opts.currentTime, {
+    realtime: opts.realtime,
+    viewMode: opts.viewMode,
+    rollingWindowS: opts.rollingWindowS,
+    duration: opts.duration,
+  });
+
+  const seriesList: any[] = [
+    {
+      name: label,
+      type: 'line',
+      data: stream.data,
+      smooth: false,
+      showSymbol: false,
+      lineStyle: { color, width: 1.5 },
+      areaStyle: opts.area
+        ? {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: color + '30' },
+                { offset: 1, color: color + '05' },
+              ],
+            },
+          }
+        : undefined,
+      markLine:
+        opts.currentTime !== undefined
+          ? {
+              symbol: ['none', 'none'],
+              silent: true,
+              animation: false,
+              lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
+              label: {
+                show: true,
+                formatter: `${opts.currentTime.toFixed(1)}s`,
+                position: 'insideEndTop',
+                color: THEME.ink,
+                fontSize: 10,
+              },
+              data: [{ xAxis: opts.currentTime }],
+            }
+          : opts.markLine !== undefined
+            ? { data: [{ yAxis: opts.markLine, lineStyle: { color: THEME.success, type: 'dashed' } }], silent: true }
+            : undefined,
+    },
+  ];
+
+  // Live probe point
+  if (stream.latestPoint && opts.currentTime !== undefined && (opts.realtime ?? true)) {
+    seriesList.push({
+      name: `${label} (Live)`,
+      type: 'effectScatter' as const,
+      data: [stream.latestPoint],
+      symbolSize: 6,
+      showEffectOn: 'render' as const,
+      rippleEffect: {
+        brushType: 'stroke' as const,
+        scale: 2.5,
+        period: 2,
+      },
+      itemStyle: {
+        color,
+        shadowBlur: 6,
+        shadowColor: color,
+      },
+      silent: true,
+      tooltip: { show: false },
+    });
+  }
+
   return baseOption({
     tooltip: opts.tooltipFormatter
       ? {
@@ -116,8 +295,8 @@ export function lineChartOption(
       axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
       splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
       scale: opts.scale ?? true,
-      min: opts.xAxisMin,
-      max: opts.xAxisMax,
+      min: opts.xAxisMin ?? stream.xMin,
+      max: opts.xAxisMax ?? stream.xMax,
     },
     yAxis: {
       type: 'value',
@@ -128,31 +307,7 @@ export function lineChartOption(
       axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
       splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
     },
-    series: [
-      {
-        name: label,
-        type: 'line',
-        data: timestamps.map((t, i) => [t, values[i]]),
-        smooth: false,
-        showSymbol: false,
-        lineStyle: { color, width: 1.5 },
-        areaStyle: opts.area
-          ? { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: color + '30' }, { offset: 1, color: color + '05' }] } }
-          : undefined,
-        markLine:
-          opts.currentTime !== undefined
-            ? {
-                symbol: ['none', 'none'],
-                silent: true,
-                animation: false,
-                lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
-                data: [{ xAxis: opts.currentTime }],
-              }
-            : opts.markLine !== undefined
-              ? { data: [{ yAxis: opts.markLine, lineStyle: { color: THEME.success, type: 'dashed' } }], silent: true }
-              : undefined,
-      },
-    ],
+    series: seriesList,
   });
 }
 
@@ -334,18 +489,51 @@ export function scatterChartOption(
   });
 }
 
-/** Multi-line chart for multiple sensor signals overlaid with dual Y-axis scaling */
+/** Multi-line chart for multiple sensor signals overlaid with dual Y-axis scaling and real-time stream plotting */
 export function multiLineOption(
   series: { name: string; timestamps: number[]; values: number[]; color?: string; yAxisIndex?: number }[],
   opts: {
     yAxisName?: string;
     secondaryYAxisName?: string;
     currentTime?: number;
+    duration?: number;
     anomalyOnset?: number;
     dualAxis?: boolean;
+    realtime?: boolean;
+    viewMode?: 'full' | 'rolling';
+    rollingWindowS?: number;
   } = {},
 ): EChartsOption {
   const isDualAxis = opts.dualAxis !== false;
+
+  let commonXMin: number | undefined;
+  let commonXMax: number | undefined;
+
+  const processedSeries = series.map((s, i) => {
+    const stream = sliceStreamData(s.timestamps, s.values, opts.currentTime, {
+      realtime: opts.realtime,
+      viewMode: opts.viewMode,
+      rollingWindowS: opts.rollingWindowS,
+      duration: opts.duration,
+    });
+    if (commonXMin === undefined && stream.xMin !== undefined) commonXMin = stream.xMin;
+    if (commonXMax === undefined && stream.xMax !== undefined) commonXMax = stream.xMax;
+
+    const yIndex =
+      s.yAxisIndex !== undefined
+        ? s.yAxisIndex
+        : isDualAxis && !s.name.toLowerCase().includes('rpm')
+          ? 1
+          : 0;
+
+    return {
+      spec: s,
+      yIndex,
+      data: stream.data,
+      latestPoint: stream.latestPoint,
+      color: s.color || THEME.palette[i % THEME.palette.length],
+    };
+  });
 
   const yAxisConfig = isDualAxis
     ? [
@@ -378,6 +566,82 @@ export function multiLineOption(
         splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
       };
 
+  const lineSeries = processedSeries.map((p) => ({
+    name: p.spec.name,
+    type: 'line' as const,
+    yAxisIndex: p.yIndex,
+    data: p.data,
+    smooth: false,
+    showSymbol: false,
+    lineStyle: { color: p.color, width: 1.5 },
+  }));
+
+  // Add live leading edge ripple points for each sensor when in real-time mode
+  const probeSeries: any[] =
+    opts.currentTime !== undefined && (opts.realtime ?? true)
+      ? processedSeries
+          .filter((p) => p.latestPoint !== null)
+          .map((p) => ({
+            name: `${p.spec.name} (Live)`,
+            type: 'effectScatter' as const,
+            yAxisIndex: p.yIndex,
+            data: [p.latestPoint!],
+            symbolSize: 6,
+            showEffectOn: 'render' as const,
+            rippleEffect: {
+              brushType: 'stroke' as const,
+              scale: 2.5,
+              period: 2,
+            },
+            itemStyle: {
+              color: p.color,
+              shadowBlur: 6,
+              shadowColor: p.color,
+            },
+            silent: true,
+            tooltip: { show: false },
+          }))
+      : [];
+
+  const overlaySeries = {
+    name: '_overlay',
+    type: 'line' as const,
+    data: [],
+    silent: true,
+    showSymbol: false,
+    markLine:
+      opts.currentTime !== undefined
+        ? {
+            symbol: ['none', 'none'],
+            silent: true,
+            animation: false,
+            lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
+            label: {
+              show: true,
+              formatter: `${opts.currentTime.toFixed(1)}s`,
+              position: 'insideEndTop',
+              color: THEME.ink,
+              fontSize: 10,
+            },
+            data: [{ xAxis: opts.currentTime }],
+          }
+        : undefined,
+    markArea:
+      opts.anomalyOnset !== undefined &&
+      (opts.currentTime === undefined || opts.currentTime >= opts.anomalyOnset)
+        ? {
+            silent: true,
+            itemStyle: { color: 'rgba(229, 83, 75, 0.12)' },
+            data: [
+              [
+                { xAxis: opts.anomalyOnset },
+                { xAxis: opts.currentTime !== undefined ? opts.currentTime : 99999 },
+              ],
+            ],
+          }
+        : undefined,
+  };
+
   return baseOption({
     grid: { top: 40, right: isDualAxis ? 65 : 24, bottom: 40, left: 60 },
     legend: {
@@ -389,6 +653,8 @@ export function multiLineOption(
     xAxis: {
       type: 'value',
       name: 'Time (s)',
+      min: commonXMin,
+      max: commonXMax,
       nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
       axisLine: { lineStyle: { color: THEME.hairline } },
       axisTick: { show: false },
@@ -396,59 +662,7 @@ export function multiLineOption(
       splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
     },
     yAxis: yAxisConfig,
-    series: [
-      ...series.map((s, i) => {
-        const yIndex =
-          s.yAxisIndex !== undefined
-            ? s.yAxisIndex
-            : isDualAxis && !s.name.toLowerCase().includes('rpm')
-              ? 1
-              : 0;
-        return {
-          name: s.name,
-          type: 'line' as const,
-          yAxisIndex: yIndex,
-          data: s.timestamps.map((t, j) => [t, s.values[j]]),
-          smooth: false,
-          showSymbol: false,
-          lineStyle: { color: s.color || THEME.palette[i % THEME.palette.length], width: 1.5 },
-        };
-      }),
-      // Dedicated background overlay series for scrubber markLine and anomaly markArea
-      // so toggling individual sensor series in the legend never hides them
-      {
-        name: '_overlay',
-        type: 'line' as const,
-        data: [],
-        silent: true,
-        showSymbol: false,
-        markLine:
-          opts.currentTime !== undefined
-            ? {
-                symbol: ['none', 'none'],
-                silent: true,
-                animation: false,
-                lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
-                label: {
-                  show: true,
-                  formatter: `${opts.currentTime.toFixed(1)}s`,
-                  position: 'insideEndTop',
-                  color: THEME.ink,
-                  fontSize: 10,
-                },
-                data: [{ xAxis: opts.currentTime }],
-              }
-            : undefined,
-        markArea:
-          opts.anomalyOnset !== undefined
-            ? {
-                silent: true,
-                itemStyle: { color: 'rgba(229, 83, 75, 0.12)' },
-                data: [[{ xAxis: opts.anomalyOnset }, { xAxis: 99999 }]],
-              }
-            : undefined,
-      },
-    ],
+    series: [...lineSeries, ...probeSeries, overlaySeries],
   });
 }
 

@@ -70,7 +70,7 @@ class SensorRegistry:
 @lru_cache
 def load_registry(path: Path = _REGISTRY_PATH) -> SensorRegistry:
     """Load the sensor registry from YAML."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     specs = []

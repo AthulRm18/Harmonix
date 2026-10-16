@@ -8,6 +8,7 @@ import { Diagnosis } from './screens/Diagnosis';
 import { Prognosis } from './screens/Prognosis';
 import { Optimizer } from './screens/Optimizer';
 import { ModelsData } from './screens/ModelsData';
+import { SensorIntelligence } from './screens/SensorIntelligence';
 import { GlobalTelemetryBar } from './components/GlobalTelemetryBar';
 import { fetchRuns } from './api/client';
 import { useReplayStore } from './state/replayStore';
@@ -49,6 +50,7 @@ const AppContent: React.FC = () => {
             <Routes>
               <Route path="/" element={<ReplayDashboard />} />
               <Route path="/signatures" element={<SignaturesLab />} />
+              <Route path="/sensors" element={<SensorIntelligence />} />
               <Route path="/diagnosis" element={<Diagnosis />} />
               <Route path="/prognosis" element={<Prognosis />} />
               <Route path="/optimizer" element={<Optimizer />} />

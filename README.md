@@ -64,8 +64,8 @@ Harmonix is an **end-to-end predictive intelligence platform** that listens to t
 │  │  Replay   │ │Signatures│ │Diagnosis │ │  Prognosis    │  │
 │  │Dashboard  │ │   Lab    │ │& Explain │ │  & RUL        │  │
 │  ├──────────┤ ├──────────┤ ├──────────┤ ├───────────────┤  │
-│  │Optimizer │ │Models &  │ │          │ │               │  │
-│  │Sweet Spot│ │  Data    │ │          │ │               │  │
+│  │Optimizer │ │Models &  │ │Sensor Lab│ │               │  │
+│  │Sweet Spot│ │  Data    │ │(Intell.) │ │               │  │
 │  └──────────┘ └──────────┘ └──────────┘ └───────────────┘  │
 │  TanStack Query │ Zustand │ ECharts │ React Router          │
 └──────────────────────┬──────────────────────────────────────┘
@@ -112,6 +112,7 @@ Harmonix is an **end-to-end predictive intelligence platform** that listens to t
 | **Replay Dashboard** | Live timeline scrubbing with multi-sensor view (RPM, Coolant, Throttle, Load), anomaly markers, and playback controls (0.5×–16×) |
 | **Signatures Lab** | Time-domain waveform, FFT spectrum, STFT spectrogram, Hilbert envelope, and order spectrum. Includes Healthy vs Current comparison toggle |
 | **Diagnosis & Explain** | Softmax probability cards from CNN, SVM, and ANN. Confusion matrices. SHAP feature importance and cylinder-level attribution charts |
+| **Sensor Lab** | Extreme condition inspector & Arbiter (sensor fault vs mechanical engine failure), real-time 10×10 cross-sensor correlation heatmap with anomaly decoupling, and cascading failure simulator detailing ECU limp-home fallbacks and virtual sensor surrogates (e.g., Speed-Density for MAF, Thermal Coupling for ECT) |
 | **Prognosis & RUL** | Health Index gauge (1.0→0.0), RUL prediction with 95% confidence fan chart, failure probability within 100h, and component wear bars |
 | **Sweet Spot Optimizer** | EPI heatmap (RPM × Load), Pareto front scatter, recommended calibration (RPM, Load, Ignition Advance °BTDC, Lambda), before/after RUL comparison |
 | **Models & Data** | Training metrics, per-class precision/recall/F1, confusion matrices for all 3 classifiers, and dataset provenance |
@@ -146,7 +147,7 @@ Harmonix is an **end-to-end predictive intelligence platform** that listens to t
 | Component | Technology |
 |:---|:---|
 | Containerization | **Docker Compose** (4 services: API, Frontend, PostgreSQL+TimescaleDB, MLflow) |
-| Testing | **pytest** (36 backend tests) |
+| Testing | **pytest** (38 backend tests) |
 | Linting | **Ruff** (Python) |
 
 ---
@@ -213,7 +214,7 @@ docker compose exec api python -m app.seed
 ```bash
 cd backend && python -m pytest tests/ -v
 ```
-36 tests covering simulator physics, DSP pipeline, ML model accuracy, sensor registry, API endpoints, LTTB downsampling, and NSGA-II optimizer correctness.
+38 tests covering simulator physics, DSP pipeline, ML model accuracy, sensor registry, cross-sensor correlations and extreme inspectors, API endpoints, LTTB downsampling, and NSGA-II optimizer correctness.
 
 ---
 
@@ -223,21 +224,21 @@ cd backend && python -m pytest tests/ -v
 Harmonix/
 ├── backend/
 │   ├── app/
-│   │   ├── api/            # FastAPI route handlers
+│   │   ├── api/            # FastAPI route handlers (DSP, models, runs, sensors, optimizer)
 │   │   ├── db/             # SQLAlchemy models & migrations
 │   │   ├── explain/        # SHAP & GradCAM explainability
 │   │   ├── models/         # SVM, ANN, CNN, Isolation Forest, Prognosis
 │   │   ├── optimize/       # NSGA-II optimizer & EPI engine
 │   │   ├── pipeline/       # DSP: FFT, STFT, envelope, order tracking
-│   │   ├── sensors/        # Sensor registry & validation
+│   │   ├── sensors/        # Sensor registry, failure modes & validation
 │   │   └── sim/            # Physics-informed engine simulator
 │   ├── alembic/            # Database migrations
-│   └── tests/              # pytest test suite (36 tests)
+│   └── tests/              # pytest test suite (38 tests)
 ├── frontend/
 │   ├── src/
 │   │   ├── api/            # API client (TanStack Query)
 │   │   ├── components/     # Sidebar, HelpPanel, ECharts theme
-│   │   ├── screens/        # 6 dashboard pages
+│   │   ├── screens/        # 7 dashboard pages (incl. Sensor Lab)
 │   │   └── state/          # Zustand replay store
 │   └── vite.config.ts      # Vite 8 + code-splitting
 ├── docs/                   # Architecture, Models, Data, Assumptions

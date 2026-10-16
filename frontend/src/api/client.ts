@@ -12,6 +12,13 @@ export const api = axios.create({
 // ── Sensor API ───────────────────────────────────────────────────
 export const fetchSensors = () => api.get('/sensors').then(r => r.data);
 export const fetchSensor = (id: string) => api.get(`/sensors/${id}`).then(r => r.data);
+export const fetchFailureModes = () =>
+  api.get('/sensors/intelligence/failure-modes').then(r => r.data);
+export const fetchRunCorrelations = (runId: string) =>
+  api.get(`/sensors/intelligence/correlations/${runId}`).then(r => r.data);
+export const fetchRunExtremes = (runId: string, time_s?: number) =>
+  api.get(`/sensors/intelligence/extremes/${runId}`, { params: { time_s } }).then(r => r.data);
+
 
 // ── Run API ──────────────────────────────────────────────────────
 export const fetchRuns = (offset = 0, limit = 50) =>

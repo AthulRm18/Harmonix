@@ -9,6 +9,7 @@ import './Sidebar.css';
 const NAV_ITEMS = [
   { to: '/', label: 'Replay Dashboard', icon: '▶' },
   { to: '/signatures', label: 'Signatures Lab', icon: '〜' },
+  { to: '/sensors', label: 'Sensor Lab', icon: '⌬' },
   { to: '/diagnosis', label: 'Diagnosis', icon: '⊕' },
   { to: '/prognosis', label: 'Prognosis', icon: '↗' },
   { to: '/optimizer', label: 'Sweet Spot', icon: '◎' },

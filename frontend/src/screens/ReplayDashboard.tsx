@@ -179,53 +179,63 @@ export const ReplayDashboard: React.FC = () => {
                   Dual-Axis: RPM (0–6000) · Scale (% / °C) (0–120)
                 </div>
               </div>
-
-              {/* View Mode Toggle - Strict Linear Pill Segmented Control */}
-              <div className="linear-tab-group">
-                <button
-                  type="button"
-                  className={`linear-tab-btn ${viewMode === 'full' ? 'active' : ''}`}
-                  onClick={() => setViewMode('full')}
-                >
-                  Full Runway
-                </button>
-                <button
-                  type="button"
-                  className={`linear-tab-btn ${viewMode === 'rolling' ? 'active' : ''}`}
-                  onClick={() => setViewMode('rolling')}
-                >
-                  Strip-Chart (30s)
-                </button>
-              </div>
+              <span className="type-caption ink-subtle font-mono" style={{ fontSize: 11 }}>
+                Playhead: {currentTime.toFixed(1)}s / {(duration || 300).toFixed(0)}s
+              </span>
             </div>
 
             {/* High-Clarity Telemetry Sensor Readout Strip */}
             <div className="telemetry-readout-strip mb-sm">
-              {SENSOR_CHANNELS.map((ch) => {
-                const val = liveReadings[ch.id];
-                return (
-                  <div key={ch.id} className="telemetry-readout-item">
-                    <div className="telemetry-readout-header">
-                      <span className="telemetry-readout-dot" style={{ backgroundColor: ch.color }} />
-                      <span className="telemetry-readout-label">{ch.label}</span>
+              <div className="telemetry-readout-sensors">
+                {SENSOR_CHANNELS.map((ch) => {
+                  const val = liveReadings[ch.id];
+                  return (
+                    <div key={ch.id} className="telemetry-readout-item">
+                      <div className="telemetry-readout-header">
+                        <span className="telemetry-readout-dot" style={{ backgroundColor: ch.color }} />
+                        <span className="telemetry-readout-label">{ch.label}</span>
+                      </div>
+                      <div className="telemetry-readout-value font-mono">
+                        {val !== undefined ? (
+                          <>
+                            <span className="num">
+                              {ch.id === 'engine_rpm'
+                                ? Math.round(val).toLocaleString()
+                                : val.toFixed(1)}
+                            </span>
+                            <span className="unit"> {ch.unit}</span>
+                          </>
+                        ) : (
+                          <span className="num">—</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="telemetry-readout-value font-mono">
-                      {val !== undefined ? (
-                        <>
-                          <span className="num">
-                            {ch.id === 'engine_rpm'
-                              ? Math.round(val).toLocaleString()
-                              : val.toFixed(1)}
-                          </span>
-                          <span className="unit"> {ch.unit}</span>
-                        </>
-                      ) : (
-                        <span className="num">—</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+
+              {/* View Mode Toggle - Strict Linear Pill Segmented Control */}
+              <div className="telemetry-readout-controls">
+                <span className="telemetry-readout-label mb-xxs" style={{ display: 'block', textAlign: 'right' }}>
+                  Timeline View
+                </span>
+                <div className="linear-tab-group">
+                  <button
+                    type="button"
+                    className={`linear-tab-btn ${viewMode === 'full' ? 'active' : ''}`}
+                    onClick={() => setViewMode('full')}
+                  >
+                    Full Runway
+                  </button>
+                  <button
+                    type="button"
+                    className={`linear-tab-btn ${viewMode === 'rolling' ? 'active' : ''}`}
+                    onClick={() => setViewMode('rolling')}
+                  >
+                    Strip-Chart (30s)
+                  </button>
+                </div>
+              </div>
             </div>
 
             {signalsLoading && !signalData ? (

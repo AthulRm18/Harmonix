@@ -12,26 +12,28 @@ export const SignaturesLab: React.FC = () => {
 
   const [showHealthy, setShowHealthy] = useState(false);
 
-  // Responsive 0.5-second engine analysis step (updates twice a second during live playback)
-  const windowStep = Math.max(0, Math.floor(currentTime * 2) / 2);
+  // Synchronized 1-second engine analysis window matching the UI scrubber window
+  const windowStep = Math.max(0, Math.floor(currentTime));
   const windowT0 = windowStep;
   const windowT1 = windowStep + 1.0;
   const stftT0 = Math.max(0, windowStep - 2);
   const stftT1 = Math.min(duration || 300, windowStep + 2);
 
-  // Waveform query
+  // Waveform query (smooth continuous buffering with placeholderData)
   const { data: rawWaveformData } = useQuery({
     queryKey: ['waveform', effectiveRunId, windowT0],
     queryFn: () => fetchWaveform(effectiveRunId, 'vibration', windowT0, windowT0 + 0.05),
-    staleTime: 1000,
+    placeholderData: (prev: any) => prev,
+    staleTime: 2000,
     enabled: !!runId,
   });
 
-  // FFT query
+  // FFT query (preserves previous frame during in-flight fetch)
   const { data: rawFftData } = useQuery({
     queryKey: ['fft', effectiveRunId, windowT0],
     queryFn: () => fetchFFT(effectiveRunId, 'vibration', windowT0, windowT1),
-    staleTime: 1000,
+    placeholderData: (prev: any) => prev,
+    staleTime: 2000,
     enabled: !!runId,
   });
 
@@ -39,6 +41,7 @@ export const SignaturesLab: React.FC = () => {
   const { data: healthyFftData } = useQuery({
     queryKey: ['fft-healthy', effectiveRunId],
     queryFn: () => fetchFFT(effectiveRunId, 'vibration', 0.5, 1.5),
+    placeholderData: (prev: any) => prev,
     staleTime: 300_000,
     enabled: showHealthy && !!runId,
   });
@@ -47,7 +50,8 @@ export const SignaturesLab: React.FC = () => {
   const { data: rawStftData } = useQuery({
     queryKey: ['stft', effectiveRunId, stftT0],
     queryFn: () => fetchSTFT(effectiveRunId, 'vibration', stftT0, stftT1),
-    staleTime: 2000,
+    placeholderData: (prev: any) => prev,
+    staleTime: 3000,
     enabled: !!runId,
   });
 
@@ -55,7 +59,8 @@ export const SignaturesLab: React.FC = () => {
   const { data: rawEnvData } = useQuery({
     queryKey: ['envelope', effectiveRunId, windowT0],
     queryFn: () => fetchEnvelope(effectiveRunId, 'vibration', windowT0, windowT1),
-    staleTime: 1000,
+    placeholderData: (prev: any) => prev,
+    staleTime: 2000,
     enabled: !!runId,
   });
 
@@ -63,7 +68,8 @@ export const SignaturesLab: React.FC = () => {
   const { data: rawOrderData } = useQuery({
     queryKey: ['order', effectiveRunId, windowT0],
     queryFn: () => fetchOrderSpectrum(effectiveRunId, 'vibration', windowT0, windowT1),
-    staleTime: 1000,
+    placeholderData: (prev: any) => prev,
+    staleTime: 2000,
     enabled: !!runId,
   });
 
@@ -151,7 +157,7 @@ export const SignaturesLab: React.FC = () => {
     if (!waveformData?.timestamps?.length) return null;
     const tStart = waveformData.timestamps[0];
     const msTimes = waveformData.timestamps.map((t: number) => Number(((t - tStart) * 1000).toFixed(2)));
-    return lineChartOption(msTimes, waveformData.values, 'Vibration', {
+    const opt = lineChartOption(msTimes, waveformData.values, 'Vibration', {
       color: THEME.primary,
       yAxisName: 'Amplitude (g)',
       xAxisName: 'Time (ms)',
@@ -167,6 +173,12 @@ export const SignaturesLab: React.FC = () => {
         </div>`;
       },
     });
+    if (opt) {
+      (opt as any).animation = true;
+      (opt as any).animationDuration = 200;
+      (opt as any).animationEasing = 'linear';
+    }
+    return opt;
   }, [waveformData]);
 
   // Build FFT chart
@@ -207,6 +219,9 @@ export const SignaturesLab: React.FC = () => {
     if (base && base.xAxis && !Array.isArray(base.xAxis)) {
       (base.xAxis as any).name = 'Frequency (Hz)';
     }
+    (base as any).animation = true;
+    (base as any).animationDuration = 350;
+    (base as any).animationEasing = 'cubicOut';
     return base;
   }, [fftData, showHealthy, healthyFftData]);
 
@@ -257,6 +272,9 @@ export const SignaturesLab: React.FC = () => {
     if (opt && opt.xAxis && !Array.isArray(opt.xAxis)) {
       (opt.xAxis as any).name = 'Frequency (Hz)';
     }
+    (opt as any).animation = true;
+    (opt as any).animationDuration = 350;
+    (opt as any).animationEasing = 'cubicOut';
     return opt;
   }, [envData]);
 
@@ -271,6 +289,9 @@ export const SignaturesLab: React.FC = () => {
     if (opt && opt.xAxis && !Array.isArray(opt.xAxis)) {
       (opt.xAxis as any).name = 'Order';
     }
+    (opt as any).animation = true;
+    (opt as any).animationDuration = 350;
+    (opt as any).animationEasing = 'cubicOut';
     return opt;
   }, [orderData]);
 
@@ -297,28 +318,28 @@ export const SignaturesLab: React.FC = () => {
               {windowT0.toFixed(1)}s – {windowT1.toFixed(1)}s (50 ms @ 8 kHz)
             </span>
           </div>
-          <ReactECharts option={waveformOpt} style={{ height: 200 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={waveformOpt} style={{ height: 200 }} notMerge={false} lazyUpdate={true} opts={{ renderer: 'canvas' }} />
         </div>
         <div className="card card-screenshot">
           <div className="type-eyebrow ink-subtle mb-xs">FFT Spectrum</div>
-          <ReactECharts option={fftOpt} style={{ height: 200 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={fftOpt} style={{ height: 200 }} notMerge={false} lazyUpdate={true} opts={{ renderer: 'canvas' }} />
         </div>
       </div>
 
       <div className="grid-2 mb-lg">
         <div className="card card-screenshot">
           <div className="type-eyebrow ink-subtle mb-xs">STFT Spectrogram</div>
-          <ReactECharts option={stftOpt} style={{ height: 250 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={stftOpt} style={{ height: 250 }} notMerge={false} lazyUpdate={true} opts={{ renderer: 'canvas' }} />
         </div>
         <div className="card card-screenshot">
           <div className="type-eyebrow ink-subtle mb-xs">Envelope Spectrum</div>
-          <ReactECharts option={envOpt} style={{ height: 250 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
+          <ReactECharts option={envOpt} style={{ height: 250 }} notMerge={false} lazyUpdate={true} opts={{ renderer: 'canvas' }} />
         </div>
       </div>
 
       <div className="card card-screenshot mb-lg">
         <div className="type-eyebrow ink-subtle mb-xs">Order Spectrum</div>
-        <ReactECharts option={orderOpt} style={{ height: 200 }} notMerge={true} lazyUpdate={false} opts={{ renderer: 'canvas' }} />
+        <ReactECharts option={orderOpt} style={{ height: 200 }} notMerge={false} lazyUpdate={true} opts={{ renderer: 'canvas' }} />
       </div>
 
       <div className="card mb-md flex justify-between items-center" style={{ padding: 'var(--space-sm) var(--space-md)' }}>

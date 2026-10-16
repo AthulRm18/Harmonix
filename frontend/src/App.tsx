@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { ReplayDashboard } from './screens/ReplayDashboard';
 import { SignaturesLab } from './screens/SignaturesLab';
@@ -8,6 +8,9 @@ import { Diagnosis } from './screens/Diagnosis';
 import { Prognosis } from './screens/Prognosis';
 import { Optimizer } from './screens/Optimizer';
 import { ModelsData } from './screens/ModelsData';
+import { GlobalTelemetryBar } from './components/GlobalTelemetryBar';
+import { fetchRuns } from './api/client';
+import { useReplayStore } from './state/replayStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,12 +21,30 @@ const queryClient = new QueryClient({
   },
 });
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { runId, setRunId, setDuration } = useReplayStore();
+
+  const { data: runsData } = useQuery({
+    queryKey: ['runs'],
+    queryFn: () => fetchRuns(),
+  });
+
+  useEffect(() => {
+    if (!runId && runsData?.runs?.length > 0) {
+      const defaultRun = runsData.runs[0];
+      setRunId(defaultRun.id);
+      if (defaultRun.duration_s) {
+        setDuration(defaultRun.duration_s);
+      }
+    }
+  }, [runId, runsData, setRunId, setDuration]);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <div style={{ display: 'flex', width: '100%', minHeight: '100vh' }}>
-          <Sidebar />
+    <BrowserRouter>
+      <div style={{ display: 'flex', width: '100%', minHeight: '100vh' }}>
+        <Sidebar />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <GlobalTelemetryBar />
           <main className="main-content" id="main-content" role="main">
             <Routes>
               <Route path="/" element={<ReplayDashboard />} />
@@ -36,9 +57,18 @@ export const App: React.FC = () => {
             </Routes>
           </main>
         </div>
-      </BrowserRouter>
+      </div>
+    </BrowserRouter>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
     </QueryClientProvider>
   );
 };
 
 export default App;
+

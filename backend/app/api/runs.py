@@ -387,8 +387,9 @@ async def get_predictions(
 ):
     """Get all predictions for a run."""
     q = (
-        select(Window, Prediction)
+        select(Window, Prediction, Model)
         .join(Prediction, Prediction.window_id == Window.id)
+        .outerjoin(Model, Model.id == Prediction.model_id)
         .where(Window.run_id == run_id)
         .order_by(Window.t_start)
     )
@@ -404,6 +405,8 @@ async def get_predictions(
                 "t_start": w.t_start,
                 "t_end": w.t_end,
                 "model_id": p.model_id,
+                "model_type": m.model_type if m else None,
+                "model_name": m.name if m else None,
                 "predicted_class": p.predicted_class,
                 "class_probs": p.class_probs,
                 "anomaly_score": p.anomaly_score,
@@ -411,9 +414,10 @@ async def get_predictions(
                 "rul_mean": p.rul_mean,
                 "p_fail_horizon": p.p_fail_horizon,
             }
-            for w, p in rows
+            for w, p, m in rows
         ],
     }
+
 
 
 @router.get("/{run_id}/events")

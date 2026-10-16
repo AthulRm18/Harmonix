@@ -26,6 +26,13 @@ export const Optimizer: React.FC = () => {
     onError: () => setIsRunning(false),
   });
 
+  // Automatically compute Pareto optimal front on initial mount
+  React.useEffect(() => {
+    if (!optimResult && !isRunning) {
+      optimMutation.mutate();
+    }
+  }, []);
+
   // Build EPI heatmap
   const epiHeatmapOpt = gridData ? (() => {
     const rpmValues = gridData.rpm_values.map((v: number) => Math.round(v));
@@ -43,8 +50,11 @@ export const Optimizer: React.FC = () => {
     return heatmapOption(rpmValues, loadValues, values, {
       xName: 'RPM',
       yName: 'Load %',
-      minVal: 0,
-      maxVal: 1,
+      valueName: 'EPI Score',
+      valueUnit: '',
+      minVal: 0.3,
+      maxVal: 1.0,
+      colorPalette: THEME.performance,
     });
   })() : null;
 

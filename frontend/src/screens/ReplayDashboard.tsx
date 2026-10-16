@@ -19,18 +19,11 @@ export const ReplayDashboard: React.FC = () => {
   const {
     runId,
     setRunId,
-    isPlaying,
-    togglePlay,
-    speed,
-    setSpeed,
     currentTime,
-    setCurrentTime,
     duration,
-    stepForward,
-    stepBackward,
   } = useReplayStore();
 
-  const { data: runsData, isLoading: runsLoading } = useQuery({
+  const { data: runsData } = useQuery({
     queryKey: ['runs'],
     queryFn: () => fetchRuns(),
   });
@@ -61,8 +54,7 @@ export const ReplayDashboard: React.FC = () => {
     staleTime: Infinity,
   });
 
-  // Fetch full signal time-series once per run (DO NOT depend on currentTime!)
-  // This eliminates network requests and skeleton flashes during playback
+  // Fetch full signal time-series once per run (DO NOT depend on currentTime)
   const { data: signalData, isLoading: signalsLoading } = useQuery({
     queryKey: ['signals-multi', runId],
     queryFn: async () => {
@@ -106,27 +98,6 @@ export const ReplayDashboard: React.FC = () => {
     );
   }, [predictions, currentTime]);
 
-  // Replay timer with smooth 100ms ticks
-  React.useEffect(() => {
-    if (!isPlaying) return;
-    const interval = setInterval(() => {
-      setCurrentTime(currentTime + speed * 0.1);
-    }, 100);
-    return () => clearInterval(interval);
-  }, [isPlaying, speed, currentTime, setCurrentTime]);
-
-  const jumpToAnomaly = () => {
-    if (events.length > 0) {
-      setCurrentTime(events[0].t_onset);
-    }
-  };
-
-  const formatTime = (t: number) => {
-    const m = Math.floor(t / 60);
-    const s = Math.floor(t % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
   const firstEventOnset = events.length > 0 ? events[0].t_onset : undefined;
 
   // Build multi-sensor chart with smooth markLine playhead
@@ -140,7 +111,8 @@ export const ReplayDashboard: React.FC = () => {
         color: s.color,
       })),
       {
-        yAxisName: 'Value',
+        yAxisName: 'Engine RPM',
+        secondaryYAxisName: 'Scale (% / °C)',
         currentTime,
         anomalyOnset: firstEventOnset,
       }
@@ -164,103 +136,24 @@ export const ReplayDashboard: React.FC = () => {
     <div className="replay-dashboard">
       <div className="page-header">
         <h1>Replay Dashboard</h1>
-        <p className="ink-muted">Synchronised multi-sensor replay with anomaly detection</p>
+        <p className="ink-muted">Synchronised multi-sensor telemetry with dual-axis scaling and anomaly detection</p>
       </div>
 
       <HelpPanel>
-        This screen lets you replay engine sensor recordings. Pick a run from the list,
-        then use the playback controls to scrub through time. Anomaly markers (highlighted
-        regions) show where the system detected a fault. Click "Jump to anomaly" to go
-        directly to the first detected event.
+        This screen presents synchronised engine sensor telemetry. Use the persistent telemetry bar at the top of the application to select scenarios, scrub through time, or adjust playback speeds. Anomaly regions (highlighted in red) indicate where model consensus detects active engine faults.
       </HelpPanel>
 
-      {/* Run Picker */}
-      <div className="card mb-md">
-        <div className="type-eyebrow ink-subtle mb-xs">Select Run</div>
-        {runsLoading ? (
-          <div className="skeleton" style={{ height: 40, width: '100%' }} />
-        ) : runs.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">📊</div>
-            <p>No runs available. Simulate or import data to get started.</p>
-          </div>
-        ) : (
-          <div className="run-picker">
-            {runs.map((run: any) => (
-              <button
-                key={run.id}
-                className={`run-card ${runId === run.id ? 'run-card-active' : ''}`}
-                onClick={() => {
-                  setRunId(run.id);
-                  if (run.duration_s) {
-                    useReplayStore.getState().setDuration(run.duration_s);
-                  }
-                }}
-              >
-                <span className="type-body-sm">{run.name}</span>
-                <span className={`badge ${run.source === 'real' ? 'badge-success' : ''}`}>
-                  {run.source}
-                </span>
-                {run.ground_truth?.fault_type && (
-                  <span className="badge">{run.ground_truth.fault_type}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Replay Controls & Charts */}
+      {/* Replay Charts */}
       {runId && (
         <>
-          <div className="replay-controls mb-md">
-            <button className="btn btn-secondary" onClick={stepBackward} title="Step back 1 window">
-              ⏮
-            </button>
-            <button className="btn btn-primary" onClick={togglePlay} title={isPlaying ? 'Pause' : 'Play'}>
-              {isPlaying ? '⏸' : '▶'}
-            </button>
-            <button className="btn btn-secondary" onClick={stepForward} title="Step forward 1 window">
-              ⏭
-            </button>
-
-            <input
-              type="range"
-              className="replay-scrubber"
-              min={0}
-              max={duration}
-              step={0.1}
-              value={currentTime}
-              onChange={(e) => setCurrentTime(parseFloat(e.target.value))}
-              aria-label="Time scrubber"
-            />
-
-            <span className="type-mono ink-muted" style={{ minWidth: 80 }}>
-              {formatTime(currentTime)} / {formatTime(duration)}
-            </span>
-
-            <select
-              className="input"
-              style={{ width: 'auto', minHeight: 32, padding: '4px 8px' }}
-              value={speed}
-              onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              aria-label="Playback speed"
-            >
-              {[0.5, 1, 2, 4, 8, 16].map((s) => (
-                <option key={s} value={s}>{s}×</option>
-              ))}
-            </select>
-
-            {events.length > 0 && (
-              <button className="btn btn-primary" onClick={jumpToAnomaly} title="Jump to first anomaly">
-                ⚡ Jump to anomaly
-              </button>
-            )}
-          </div>
-
-          {/* Multi-Sensor View */}
+          {/* Multi-Sensor View with Dual Y-Axes */}
           <div className="card card-screenshot mb-md">
-            <div className="type-eyebrow ink-subtle mb-xs">Multi-Sensor View</div>
+            <div className="flex items-center justify-between mb-xs">
+              <div className="type-eyebrow ink-subtle">Multi-Sensor Telemetry Comparison</div>
+              <span className="type-caption ink-subtle" style={{ fontSize: 11 }}>
+                Dual-Axis: RPM (0–6000) · Scale (% / °C) (0–120)
+              </span>
+            </div>
             {signalsLoading && !signalData ? (
               <div className="skeleton" style={{ height: 280 }} />
             ) : sensorChartOpt ? (
@@ -297,35 +190,61 @@ export const ReplayDashboard: React.FC = () => {
           {/* Status Cards */}
           <div className="grid-3">
             <div className="card">
-              <div className="type-eyebrow ink-subtle mb-xs">Predicted Class</div>
-              <div className="type-headline" style={{ color: currentPred?.predicted_class === 'normal' ? THEME.success : THEME.primary }}>
-                {currentPred?.predicted_class || 'Normal'}
+              <div className="flex items-center justify-between mb-xs">
+                <div className="type-eyebrow ink-subtle">Active Prediction</div>
+                <span
+                  className="status-badge"
+                  style={{
+                    backgroundColor: (!currentPred || currentPred.predicted_class === 'normal') ? 'rgba(39, 166, 68, 0.12)' : 'rgba(229, 83, 75, 0.12)',
+                    color: (!currentPred || currentPred.predicted_class === 'normal') ? 'var(--color-semantic-success)' : '#e5534b',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                  }}
+                >
+                  ● {(!currentPred || currentPred.predicted_class === 'normal') ? 'NOMINAL' : 'FAULT'}
+                </span>
+              </div>
+              <div className="type-card-title mb-xxs" style={{ color: 'var(--color-ink)' }}>
+                {currentPred?.predicted_class?.replace(/_/g, ' ').toUpperCase() || 'NORMAL'}
               </div>
               <div className="type-caption ink-subtle">
-                Confidence: {currentPred?.class_probs
-                  ? Math.max(...Object.values(currentPred.class_probs as Record<string, number>)).toFixed(2)
+                Confidence:{' '}
+                {currentPred?.class_probs
+                  ? `${(Math.max(...Object.values(currentPred.class_probs as Record<string, number>)) * 100).toFixed(1)}%`
                   : '—'}
               </div>
             </div>
+
             <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div className="type-eyebrow ink-subtle mb-xs">Anomaly Score</div>
+              <div className="type-eyebrow ink-subtle mb-xs" style={{ alignSelf: 'flex-start' }}>Anomaly Score</div>
               <ReactECharts
-                option={gaugeOption(currentPred?.anomaly_score ?? 0.12, { label: 'Score', color: (currentPred?.anomaly_score ?? 0) > 0.5 ? '#e5534b' : THEME.primary })}
+                option={gaugeOption(currentPred?.anomaly_score ?? 0.08, {
+                  label: (currentPred?.anomaly_score ?? 0) > 0.5 ? 'CRITICAL' : (currentPred?.anomaly_score ?? 0) > 0.25 ? 'ELEVATED' : 'NOMINAL',
+                  color: (currentPred?.anomaly_score ?? 0) > 0.5 ? '#e5534b' : (currentPred?.anomaly_score ?? 0) > 0.25 ? '#f59e0b' : THEME.primary,
+                })}
                 style={{ height: 140, width: '100%' }}
                 notMerge={false}
                 lazyUpdate={true}
                 opts={{ renderer: 'canvas' }}
               />
             </div>
+
             <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div className="type-eyebrow ink-subtle mb-xs">Health Index</div>
-              <ReactECharts
-                option={gaugeOption(currentPred?.health_index ?? 0.94, { label: 'HI', color: THEME.success })}
-                style={{ height: 140, width: '100%' }}
-                notMerge={false}
-                lazyUpdate={true}
-                opts={{ renderer: 'canvas' }}
-              />
+              <div className="type-eyebrow ink-subtle mb-xs" style={{ alignSelf: 'flex-start' }}>Engine Health Index</div>
+              {(() => {
+                const hi = currentPred?.health_index ?? 0.94;
+                const hiColor = hi >= 0.7 ? THEME.success : hi >= 0.4 ? '#f59e0b' : '#e5534b';
+                const hiLabel = hi >= 0.7 ? 'GOOD' : hi >= 0.4 ? 'DEGRADED' : 'CRITICAL';
+                return (
+                  <ReactECharts
+                    option={gaugeOption(hi, { label: hiLabel, color: hiColor })}
+                    style={{ height: 140, width: '100%' }}
+                    notMerge={false}
+                    lazyUpdate={true}
+                    opts={{ renderer: 'canvas' }}
+                  />
+                );
+              })()}
             </div>
           </div>
         </>

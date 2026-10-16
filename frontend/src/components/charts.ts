@@ -22,6 +22,20 @@ export const THEME = {
   success: '#27a644',
   // Chart palette – single accent family (lavender), plus muted tones
   palette: ['#5e6ad2', '#828fff', '#a5aeff', '#27a644', '#7a7fad', '#d0d6e0'],
+  // Scientific high-contrast spectrogram colormap (Inferno / Magma)
+  spectrogram: [
+    '#070714',
+    '#1c1538',
+    '#381c5a',
+    '#6b1d6b',
+    '#a52c60',
+    '#d6483b',
+    '#f57c20',
+    '#fdbd38',
+    '#fffbc8',
+  ],
+  // Performance / Efficiency colormap (Red -> Amber -> Blue -> Emerald Green)
+  performance: ['#7f1d1d', '#b91c1c', '#d97706', '#2563eb', '#16a34a', '#22c55e'],
   fontFamily:
     "'Inter', 'SF Pro Display', -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif",
   monoFamily: "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace",
@@ -68,20 +82,42 @@ export function lineChartOption(
     color?: string;
     area?: boolean;
     yAxisName?: string;
+    xAxisName?: string;
+    scale?: boolean;
+    xAxisMin?: number | string;
+    xAxisMax?: number | string;
     markLine?: number;
     currentTime?: number;
+    tooltipFormatter?: (params: any) => string;
   } = {},
 ): EChartsOption {
   const color = opts.color || THEME.primary;
   return baseOption({
+    tooltip: opts.tooltipFormatter
+      ? {
+          trigger: 'axis',
+          backgroundColor: THEME.surface2,
+          borderColor: THEME.hairlineStrong,
+          borderWidth: 1,
+          formatter: opts.tooltipFormatter,
+          textStyle: {
+            color: THEME.ink,
+            fontFamily: THEME.fontFamily,
+            fontSize: 12,
+          },
+        }
+      : undefined,
     xAxis: {
       type: 'value',
-      name: 'Time (s)',
+      name: opts.xAxisName || 'Time (s)',
       nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
       axisLine: { lineStyle: { color: THEME.hairline } },
       axisTick: { show: false },
       axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
+      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
+      scale: opts.scale ?? true,
+      min: opts.xAxisMin,
+      max: opts.xAxisMax,
     },
     yAxis: {
       type: 'value',
@@ -90,7 +126,7 @@ export function lineChartOption(
       axisLine: { lineStyle: { color: THEME.hairline } },
       axisTick: { show: false },
       axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
+      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
     },
     series: [
       {
@@ -169,12 +205,22 @@ export function heatmapOption(
   opts: {
     xName?: string;
     yName?: string;
+    valueName?: string;
+    valueUnit?: string;
     minVal?: number;
     maxVal?: number;
     colorRange?: [string, string];
+    colorPalette?: readonly string[] | string[];
   } = {},
 ): EChartsOption {
-  const [lowColor, highColor] = opts.colorRange || [THEME.surface2, THEME.primary];
+  const inRangeColors = opts.colorPalette
+    ? [...opts.colorPalette]
+    : opts.colorRange
+      ? [opts.colorRange[0], THEME.primaryHover, opts.colorRange[1]]
+      : [THEME.surface2, THEME.primaryHover, THEME.primary];
+  const valLabel = opts.valueName || 'Value';
+  const valUnit = opts.valueUnit !== undefined ? opts.valueUnit : '';
+
   return baseOption({
     grid: { top: 40, right: 80, bottom: 60, left: 80 },
     tooltip: {
@@ -182,11 +228,12 @@ export function heatmapOption(
       formatter: (params: any) => {
         const x = xData[params.data?.[0]];
         const y = yData[params.data?.[1]];
-        const val = typeof params.data?.[2] === 'number' ? params.data[2].toFixed(2) : params.data?.[2];
+        const rawVal = params.data?.[2];
+        const val = typeof rawVal === 'number' ? rawVal.toFixed(2) : rawVal;
         return `<div style="padding: 2px 4px;">
-          <div><span style="color: ${THEME.inkSubtle}">${opts.xName || 'Time'}:</span> <strong>${x}</strong></div>
-          <div><span style="color: ${THEME.inkSubtle}">${opts.yName || 'Freq'}:</span> <strong>${y}</strong></div>
-          <div><span style="color: ${THEME.primaryHover}">Energy:</span> <strong>${val} dB</strong></div>
+          <div><span style="color: ${THEME.inkSubtle}">${opts.xName || 'X'}:</span> <strong>${x}</strong></div>
+          <div><span style="color: ${THEME.inkSubtle}">${opts.yName || 'Y'}:</span> <strong>${y}</strong></div>
+          <div><span style="color: ${THEME.primaryHover}">${valLabel}:</span> <strong>${val}${valUnit ? ' ' + valUnit : ''}</strong></div>
         </div>`;
       },
     },
@@ -194,6 +241,8 @@ export function heatmapOption(
       type: 'category',
       data: xData,
       name: opts.xName,
+      nameLocation: 'center',
+      nameGap: 28,
       nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
       axisLine: { lineStyle: { color: THEME.hairline } },
       axisTick: { show: false },
@@ -217,7 +266,7 @@ export function heatmapOption(
       orient: 'vertical',
       right: 0,
       top: 'center',
-      inRange: { color: [lowColor, THEME.primaryHover, highColor] },
+      inRange: { color: inRangeColors },
       textStyle: { color: THEME.inkSubtle, fontSize: 10 },
     },
     series: [
@@ -285,16 +334,52 @@ export function scatterChartOption(
   });
 }
 
-/** Multi-line chart for multiple sensor signals overlaid */
+/** Multi-line chart for multiple sensor signals overlaid with dual Y-axis scaling */
 export function multiLineOption(
-  series: { name: string; timestamps: number[]; values: number[]; color?: string }[],
+  series: { name: string; timestamps: number[]; values: number[]; color?: string; yAxisIndex?: number }[],
   opts: {
     yAxisName?: string;
+    secondaryYAxisName?: string;
     currentTime?: number;
     anomalyOnset?: number;
+    dualAxis?: boolean;
   } = {},
 ): EChartsOption {
+  const isDualAxis = opts.dualAxis !== false;
+
+  const yAxisConfig = isDualAxis
+    ? [
+        {
+          type: 'value' as const,
+          name: opts.yAxisName || 'Engine RPM',
+          nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
+          axisLine: { lineStyle: { color: THEME.hairline } },
+          axisTick: { show: false },
+          axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
+          splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
+        },
+        {
+          type: 'value' as const,
+          name: opts.secondaryYAxisName || 'Sensor Scale (% / °C)',
+          nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
+          axisLine: { lineStyle: { color: THEME.hairline } },
+          axisTick: { show: false },
+          axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
+          splitLine: { show: false },
+        },
+      ]
+    : {
+        type: 'value' as const,
+        name: opts.yAxisName,
+        nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
+        axisLine: { lineStyle: { color: THEME.hairline } },
+        axisTick: { show: false },
+        axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
+        splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
+      };
+
   return baseOption({
+    grid: { top: 40, right: isDualAxis ? 65 : 24, bottom: 40, left: 60 },
     legend: {
       show: true,
       data: series.map((s) => s.name),
@@ -308,26 +393,27 @@ export function multiLineOption(
       axisLine: { lineStyle: { color: THEME.hairline } },
       axisTick: { show: false },
       axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
+      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' as const } },
     },
-    yAxis: {
-      type: 'value',
-      name: opts.yAxisName,
-      nameTextStyle: { color: THEME.inkSubtle, fontSize: 11 },
-      axisLine: { lineStyle: { color: THEME.hairline } },
-      axisTick: { show: false },
-      axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
-      splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
-    },
+    yAxis: yAxisConfig,
     series: [
-      ...series.map((s, i) => ({
-        name: s.name,
-        type: 'line' as const,
-        data: s.timestamps.map((t, j) => [t, s.values[j]]),
-        smooth: false,
-        showSymbol: false,
-        lineStyle: { color: s.color || THEME.palette[i % THEME.palette.length], width: 1.5 },
-      })),
+      ...series.map((s, i) => {
+        const yIndex =
+          s.yAxisIndex !== undefined
+            ? s.yAxisIndex
+            : isDualAxis && !s.name.toLowerCase().includes('rpm')
+              ? 1
+              : 0;
+        return {
+          name: s.name,
+          type: 'line' as const,
+          yAxisIndex: yIndex,
+          data: s.timestamps.map((t, j) => [t, s.values[j]]),
+          smooth: false,
+          showSymbol: false,
+          lineStyle: { color: s.color || THEME.palette[i % THEME.palette.length], width: 1.5 },
+        };
+      }),
       // Dedicated background overlay series for scrubber markLine and anomaly markArea
       // so toggling individual sensor series in the legend never hides them
       {
@@ -367,7 +453,7 @@ export function multiLineOption(
 }
 
 
-/** Gauge chart for health index / probability */
+/** Gauge chart for health index / probability / RUL */
 export function gaugeOption(
   value: number,
   opts: {
@@ -375,9 +461,11 @@ export function gaugeOption(
     max?: number;
     color?: string;
     thresholds?: { value: number; color: string }[];
+    formatter?: (val: number) => string;
   } = {},
 ): EChartsOption {
   const max = opts.max ?? 1;
+  const clampedVal = Math.min(Math.max(0, value), max);
   return {
     backgroundColor: 'transparent',
     series: [
@@ -411,14 +499,19 @@ export function gaugeOption(
         },
         detail: {
           valueAnimation: true,
-          fontSize: 28,
+          fontSize: 26,
           fontFamily: THEME.fontFamily,
           fontWeight: 600,
           color: THEME.ink,
           offsetCenter: [0, '10%'],
-          formatter: (val: number) => (max <= 1 ? val.toFixed(2) : `${Math.round(val)}h`),
+          formatter: (val: number) => {
+            if (opts.formatter) return opts.formatter(value);
+            if (max <= 1) return val.toFixed(2);
+            if (value >= 5000) return '> 1,500h';
+            return `${Math.round(val)}h`;
+          },
         },
-        data: [{ value, name: opts.label || '' }],
+        data: [{ value: clampedVal, name: opts.label || '' }],
       },
     ],
   };

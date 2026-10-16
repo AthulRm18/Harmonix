@@ -19,10 +19,10 @@ export const SignaturesLab: React.FC = () => {
   const stftT0 = Math.max(0, windowStep - 2);
   const stftT1 = Math.min(duration || 300, windowStep + 2);
 
-  // Waveform query (smooth continuous buffering with placeholderData)
+  // Waveform query: fetch a continuous 1.5s acoustic buffer around windowT0
   const { data: rawWaveformData } = useQuery({
-    queryKey: ['waveform', effectiveRunId, windowT0],
-    queryFn: () => fetchWaveform(effectiveRunId, 'vibration', windowT0, windowT0 + 0.05),
+    queryKey: ['waveform-buffer', effectiveRunId, windowT0],
+    queryFn: () => fetchWaveform(effectiveRunId, 'vibration', windowT0, windowT0 + 1.5, 3000),
     placeholderData: (prev: any) => prev,
     staleTime: 2000,
     enabled: !!runId,
@@ -73,16 +73,80 @@ export const SignaturesLab: React.FC = () => {
     enabled: !!runId,
   });
 
-  // High-fidelity fallback / current data resolvers (ensures continuous movement during live playback)
+  // Real-time oscilloscope window: 50ms window that flows continuously with currentTime
   const waveformData = useMemo(() => {
-    if (rawWaveformData?.timestamps?.length) return rawWaveformData;
+    const windowDuration = 0.05; // 50 ms window
+    const sliceStart = currentTime;
+    const sliceEnd = currentTime + windowDuration;
+
+    if (rawWaveformData?.timestamps?.length && rawWaveformData?.values?.length) {
+      const ts = rawWaveformData.timestamps;
+      const vs = rawWaveformData.values;
+      const tMin = ts[0];
+      const tMax = ts[ts.length - 1];
+
+      // If currentTime is within the loaded buffer
+      if (sliceStart >= tMin && sliceStart < tMax) {
+        const slicedTs: number[] = [];
+        const slicedVs: number[] = [];
+        for (let i = 0; i < ts.length; i++) {
+          if (ts[i] >= sliceStart && ts[i] <= sliceEnd) {
+            slicedTs.push(ts[i]);
+            slicedVs.push(vs[i]);
+          }
+        }
+        if (slicedTs.length >= 20) {
+          return { timestamps: slicedTs, values: slicedVs, sliceStart };
+        }
+      }
+    }
+
+    // High-fidelity flowing fallback driven directly by continuous currentTime
     const n = 160;
-    const ts = Array.from({ length: n }, (_, i) => windowT0 + (i / n) * 0.05);
-    const rpmSim = 2500 + 600 * Math.sin(windowT0 * 0.15);
+    const ts: number[] = [];
+    const vs: number[] = [];
+    const rpmSim = 2500 + 600 * Math.sin(currentTime * 0.15);
     const fFire = (rpmSim / 60) * 2;
-    const vs = ts.map((t) => Math.sin(2 * Math.PI * fFire * t) * 0.8 + Math.sin(2 * Math.PI * (fFire * 2) * t) * 0.35 + 0.15 * Math.sin(2 * Math.PI * 6000 * t));
-    return { timestamps: ts, values: vs };
-  }, [rawWaveformData, windowT0]);
+    for (let i = 0; i < n; i++) {
+      const tAbs = sliceStart + (i / n) * windowDuration;
+      ts.push(tAbs);
+      const v =
+        Math.sin(2 * Math.PI * fFire * tAbs) * 0.8 +
+        Math.sin(2 * Math.PI * (fFire * 2) * tAbs) * 0.35 +
+        0.15 * Math.sin(2 * Math.PI * 6000 * tAbs) +
+        0.05 * Math.sin(tAbs * 12345.6);
+      vs.push(v);
+    }
+    return { timestamps: ts, values: vs, sliceStart };
+  }, [rawWaveformData, currentTime]);
+
+  // Build waveform chart (convert 50ms window slice to relative ms for clear oscilloscope visualization)
+  const waveformOpt = useMemo(() => {
+    if (!waveformData?.timestamps?.length) return null;
+    const tStart = waveformData.sliceStart ?? waveformData.timestamps[0];
+    const msTimes = waveformData.timestamps.map((t: number) => Number(((t - tStart) * 1000).toFixed(2)));
+    const opt = lineChartOption(msTimes, waveformData.values, 'Vibration', {
+      color: THEME.primary,
+      yAxisName: 'Amplitude (g)',
+      xAxisName: 'Time (ms)',
+      scale: true,
+      tooltipFormatter: (params: any) => {
+        const item = Array.isArray(params) ? params[0] : params;
+        const ms = item?.data?.[0] ?? item?.name ?? 0;
+        const absSec = (tStart + Number(ms) / 1000).toFixed(3);
+        const val = typeof item?.data?.[1] === 'number' ? item.data[1].toFixed(3) : item?.data?.[1];
+        return `<div style="padding: 2px 4px;">
+          <div><span style="color: ${THEME.inkSubtle}">Window Time:</span> <strong>${absSec}s</strong> (${ms} ms)</div>
+          <div><span style="color: ${THEME.primaryHover}">Amplitude:</span> <strong>${val} g</strong></div>
+        </div>`;
+      },
+    });
+    if (opt) {
+      // Immediate frame refresh without point-morphing lag for real-time oscilloscope sweep
+      (opt as any).animation = false;
+    }
+    return opt;
+  }, [waveformData]);
 
   const fftData = useMemo(() => {
     if (rawFftData?.frequencies?.length) return rawFftData;
@@ -152,34 +216,7 @@ export const SignaturesLab: React.FC = () => {
     return { orders, magnitudes: mags };
   }, [rawOrderData, windowT0]);
 
-  // Build waveform chart (convert 50ms window slice to relative ms for clear oscilloscope visualization)
-  const waveformOpt = useMemo(() => {
-    if (!waveformData?.timestamps?.length) return null;
-    const tStart = waveformData.timestamps[0];
-    const msTimes = waveformData.timestamps.map((t: number) => Number(((t - tStart) * 1000).toFixed(2)));
-    const opt = lineChartOption(msTimes, waveformData.values, 'Vibration', {
-      color: THEME.primary,
-      yAxisName: 'Amplitude (g)',
-      xAxisName: 'Time (ms)',
-      scale: true,
-      tooltipFormatter: (params: any) => {
-        const item = Array.isArray(params) ? params[0] : params;
-        const ms = item?.data?.[0] ?? item?.name ?? 0;
-        const absSec = (tStart + Number(ms) / 1000).toFixed(3);
-        const val = typeof item?.data?.[1] === 'number' ? item.data[1].toFixed(3) : item?.data?.[1];
-        return `<div style="padding: 2px 4px;">
-          <div><span style="color: ${THEME.inkSubtle}">Window Time:</span> <strong>${absSec}s</strong> (${ms} ms)</div>
-          <div><span style="color: ${THEME.primaryHover}">Amplitude:</span> <strong>${val} g</strong></div>
-        </div>`;
-      },
-    });
-    if (opt) {
-      (opt as any).animation = true;
-      (opt as any).animationDuration = 200;
-      (opt as any).animationEasing = 'linear';
-    }
-    return opt;
-  }, [waveformData]);
+
 
   // Build FFT chart
   const fftOpt = useMemo(() => {
@@ -315,7 +352,7 @@ export const SignaturesLab: React.FC = () => {
           <div className="flex items-center justify-between mb-xs">
             <div className="type-eyebrow ink-subtle">Time-Domain Waveform</div>
             <span className="type-caption ink-subtle" style={{ fontSize: 11 }}>
-              {windowT0.toFixed(1)}s – {windowT1.toFixed(1)}s (50 ms @ 8 kHz)
+              {currentTime.toFixed(2)}s – {(currentTime + 0.05).toFixed(2)}s (50 ms live oscilloscope)
             </span>
           </div>
           <ReactECharts option={waveformOpt} style={{ height: 200 }} notMerge={false} lazyUpdate={true} opts={{ renderer: 'canvas' }} />

@@ -32,6 +32,13 @@ export const SignaturesLab: React.FC = () => {
     queryFn: () => fetchFFT(effectiveRunId, 'vibration', windowT0, windowT1),
   });
 
+  // Healthy baseline FFT query (early run before fault onset)
+  const { data: healthyFftData } = useQuery({
+    queryKey: ['fft-healthy', effectiveRunId],
+    queryFn: () => fetchFFT(effectiveRunId, 'vibration', 0.5, 1.5),
+    enabled: showHealthy,
+  });
+
   // STFT query
   const { data: stftData, isLoading: stftLoading } = useQuery({
     queryKey: ['stft', effectiveRunId, stftT0, stftT1],
@@ -60,17 +67,46 @@ export const SignaturesLab: React.FC = () => {
 
   // Build FFT chart
   const fftOpt = fftData
-    ? lineChartOption(
-      fftData.frequencies.slice(0, Math.min(fftData.frequencies.length, 500)),
-      fftData.magnitudes.slice(0, Math.min(fftData.magnitudes.length, 500)),
-      'FFT Magnitude',
-      { color: THEME.primaryHover, area: true, yAxisName: 'Magnitude' }
-    )
+    ? (() => {
+        const nPts = Math.min(fftData.frequencies.length, 500);
+        const freqs = fftData.frequencies.slice(0, nPts);
+        const mags = fftData.magnitudes.slice(0, nPts);
+        const base = lineChartOption(
+          freqs,
+          mags,
+          showHealthy ? 'Current Window' : 'FFT Magnitude',
+          { color: THEME.primaryHover, area: !showHealthy, yAxisName: 'Magnitude' }
+        );
+        if (showHealthy && healthyFftData) {
+          const healthyMags = healthyFftData.magnitudes.slice(0, nPts);
+          (base as any).legend = {
+            show: true,
+            top: 4,
+            textStyle: { color: THEME.inkMuted, fontSize: 11 },
+          };
+          (base as any).series = [
+            {
+              name: 'Current Window',
+              type: 'line',
+              data: freqs.map((f: number, i: number) => [f, mags[i]]),
+              lineStyle: { color: THEME.primaryHover, width: 1.5 },
+              showSymbol: false,
+            },
+            {
+              name: 'Healthy Baseline',
+              type: 'line',
+              data: freqs.map((f: number, i: number) => [f, healthyMags[i]]),
+              lineStyle: { color: THEME.success, width: 1.5, type: 'dashed' },
+              showSymbol: false,
+            },
+          ];
+        }
+        if (base && base.xAxis && !Array.isArray(base.xAxis)) {
+          (base.xAxis as any).name = 'Frequency (Hz)';
+        }
+        return base;
+      })()
     : null;
-  // Override xAxis name for FFT
-  if (fftOpt && fftOpt.xAxis && !Array.isArray(fftOpt.xAxis)) {
-    (fftOpt.xAxis as any).name = 'Frequency (Hz)';
-  }
 
   // Build STFT heatmap
   const stftOpt = stftData ? (() => {

@@ -177,6 +177,19 @@ export function heatmapOption(
   const [lowColor, highColor] = opts.colorRange || [THEME.surface2, THEME.primary];
   return baseOption({
     grid: { top: 40, right: 80, bottom: 60, left: 80 },
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: any) => {
+        const x = xData[params.data?.[0]];
+        const y = yData[params.data?.[1]];
+        const val = typeof params.data?.[2] === 'number' ? params.data[2].toFixed(2) : params.data?.[2];
+        return `<div style="padding: 2px 4px;">
+          <div><span style="color: ${THEME.inkSubtle}">${opts.xName || 'Time'}:</span> <strong>${x}</strong></div>
+          <div><span style="color: ${THEME.inkSubtle}">${opts.yName || 'Freq'}:</span> <strong>${y}</strong></div>
+          <div><span style="color: ${THEME.primaryHover}">Energy:</span> <strong>${val} dB</strong></div>
+        </div>`;
+      },
+    },
     xAxis: {
       type: 'category',
       data: xData,
@@ -284,6 +297,7 @@ export function multiLineOption(
   return baseOption({
     legend: {
       show: true,
+      data: series.map((s) => s.name),
       top: 4,
       textStyle: { color: THEME.inkMuted, fontSize: 11 },
     },
@@ -305,39 +319,50 @@ export function multiLineOption(
       axisLabel: { color: THEME.inkSubtle, fontSize: 11 },
       splitLine: { lineStyle: { color: THEME.hairline, type: 'dashed' } },
     },
-    series: series.map((s, i) => ({
-      name: s.name,
-      type: 'line' as const,
-      data: s.timestamps.map((t, j) => [t, s.values[j]]),
-      smooth: false,
-      showSymbol: false,
-      lineStyle: { color: s.color || THEME.palette[i % THEME.palette.length], width: 1.5 },
-      markLine:
-        i === 0 && opts.currentTime !== undefined
-          ? {
-              symbol: ['none', 'none'],
-              silent: true,
-              animation: false,
-              lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
-              label: {
-                show: true,
-                formatter: `${opts.currentTime.toFixed(1)}s`,
-                position: 'insideEndTop',
-                color: THEME.ink,
-                fontSize: 10,
-              },
-              data: [{ xAxis: opts.currentTime }],
-            }
-          : undefined,
-      markArea:
-        i === 0 && opts.anomalyOnset !== undefined
-          ? {
-              silent: true,
-              itemStyle: { color: 'rgba(229, 83, 75, 0.12)' },
-              data: [[{ xAxis: opts.anomalyOnset }, { xAxis: 99999 }]],
-            }
-          : undefined,
-    })),
+    series: [
+      ...series.map((s, i) => ({
+        name: s.name,
+        type: 'line' as const,
+        data: s.timestamps.map((t, j) => [t, s.values[j]]),
+        smooth: false,
+        showSymbol: false,
+        lineStyle: { color: s.color || THEME.palette[i % THEME.palette.length], width: 1.5 },
+      })),
+      // Dedicated background overlay series for scrubber markLine and anomaly markArea
+      // so toggling individual sensor series in the legend never hides them
+      {
+        name: '_overlay',
+        type: 'line' as const,
+        data: [],
+        silent: true,
+        showSymbol: false,
+        markLine:
+          opts.currentTime !== undefined
+            ? {
+                symbol: ['none', 'none'],
+                silent: true,
+                animation: false,
+                lineStyle: { color: THEME.primaryHover, width: 2, type: 'solid' },
+                label: {
+                  show: true,
+                  formatter: `${opts.currentTime.toFixed(1)}s`,
+                  position: 'insideEndTop',
+                  color: THEME.ink,
+                  fontSize: 10,
+                },
+                data: [{ xAxis: opts.currentTime }],
+              }
+            : undefined,
+        markArea:
+          opts.anomalyOnset !== undefined
+            ? {
+                silent: true,
+                itemStyle: { color: 'rgba(229, 83, 75, 0.12)' },
+                data: [[{ xAxis: opts.anomalyOnset }, { xAxis: 99999 }]],
+              }
+            : undefined,
+      },
+    ],
   });
 }
 

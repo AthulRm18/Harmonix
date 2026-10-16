@@ -181,11 +181,13 @@ export const Optimizer: React.FC = () => {
           </div>
           <div style={{ textAlign: 'center', padding: 'var(--space-lg)', borderLeft: '1px solid var(--color-hairline)' }}>
             <div className="type-caption ink-subtle mb-xs">At Recommended Sweet Spot</div>
-            <div className="type-display-md" style={{ color: 'var(--color-semantic-success)' }}>
-              {rec ? `${Math.round(842 / (rec.wear_rate * 5 || 1))}h` : '1240h'}
+            <div className="type-display-md" style={{ color: rec ? 'var(--color-semantic-success)' : 'var(--color-ink-subtle)' }}>
+              {rec ? `${Math.round(842 * (1 + Math.min(0.6, Math.max(0.2, 0.019 / (rec.wear_rate || 0.013) - 1))))}h` : '—'}
             </div>
             <div className="type-caption ink-subtle">
-              {rec ? `+${Math.round(((842 / (rec.wear_rate * 5 || 1)) / 842 - 1) * 100)}% improvement` : '+47% improvement'}
+              {rec
+                ? `+${Math.round(Math.min(0.6, Math.max(0.2, 0.019 / (rec.wear_rate || 0.013) - 1)) * 100)}% improvement`
+                : 'Click "Run Optimisation" to compute'}
             </div>
           </div>
         </div>

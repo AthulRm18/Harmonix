@@ -15,6 +15,8 @@
 </div>
 
 ---
+<img width="1238" height="762" alt="Screenshot 2026-10-16 200522" src="https://github.com/user-attachments/assets/6943f7ea-249a-4002-898b-6bd7064432a4" />
+
 
 ## 🔥 The Problem
 
